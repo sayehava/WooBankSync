@@ -574,4 +574,38 @@ class WooBankSync
 
         return array_values(array_unique(array_filter($aliases, static function ($alias) use ($paymentMethod) { return $alias !== $paymentMethod; })));
     }
+
+    private function discoverMetaKeysByGateway($orders)
+    {
+        $result = array();
+        foreach ($orders as $order) {
+            $gateway = (string) ($order['payment_method'] ?? '');
+            if ($gateway === '') continue;
+            if (empty($result[$gateway])) $result[$gateway] = array();
+            foreach (($order['meta_data'] ?? array()) as $meta) {
+                $key = (string) ($meta['key'] ?? '');
+                if ($key === '') continue;
+                if (!in_array($key, $result[$gateway], true)) $result[$gateway][] = $key;
+            }
+            sort($result[$gateway]);
+        }
+        return $result;
+    }
+
+    private function discoverInvoiceKeys($orders)
+    {
+        $keys = array();
+        $needles = array('invoice', 'rechnung', 'germanized', 'wcpdf', 'pdf_invoice', 'document_number');
+        foreach ($orders as $order) {
+            foreach (($order['meta_data'] ?? array()) as $meta) {
+                $key = (string) ($meta['key'] ?? '');
+                $lower = strtolower($key);
+                foreach ($needles as $needle) {
+                    if (strpos($lower, $needle) !== false && !in_array($key, $keys, true)) $keys[] = $key;
+                }
+            }
+        }
+        sort($keys);
+        return $keys;
+    }
 }
