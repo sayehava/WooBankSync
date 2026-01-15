@@ -608,4 +608,17 @@ class WooBankSync
         sort($keys);
         return $keys;
     }
+
+    private function extractBuyerName($order)
+    {
+        $billing = isset($order['billing']) && is_array($order['billing']) ? $order['billing'] : array();
+        $first = trim((string) ($billing['first_name'] ?? ''));
+        $last = trim((string) ($billing['last_name'] ?? ''));
+        $company = trim((string) ($billing['company'] ?? ''));
+        $name = trim($first . ' ' . $last);
+        if ($name === '') $name = $company;
+        if ($name === '') $name = trim((string) ($order['customer_note'] ?? ''));
+        $name = preg_replace('/\s+/', ' ', $name);
+        return dol_trunc($name, 80);
+    }
 }
