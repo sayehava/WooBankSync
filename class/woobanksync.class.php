@@ -977,4 +977,34 @@ class WooBankSync
         return substr($baseRef, 0, 6) . mt_rand(10, 99);
     }
 
+
+    private function getDefaultCountryId()
+    {
+        $countryCode = '';
+        if (!empty($GLOBALS['conf']->global->MAIN_INFO_SOCIETE_COUNTRY)) {
+            $countryCode = (string) $GLOBALS['conf']->global->MAIN_INFO_SOCIETE_COUNTRY;
+        }
+        if ($countryCode === '') $countryCode = 'DE';
+        $countryCode = strtoupper(trim($countryCode));
+
+        $table = MAIN_DB_PREFIX . 'c_country';
+        $fields = $this->getTableColumns($table);
+        if (empty($fields)) return 0;
+
+        $where = array();
+        if (in_array('code', $fields, true)) $where[] = "code='" . $this->db->escape($countryCode) . "'";
+        if (in_array('code_iso', $fields, true)) $where[] = "code_iso='" . $this->db->escape($countryCode) . "'";
+        if (empty($where)) return 0;
+
+        $sql = 'SELECT rowid FROM ' . $table . ' WHERE (' . implode(' OR ', $where) . ') LIMIT 1';
+        $res = $this->db->query($sql);
+        if ($res && ($obj = $this->db->fetch_object($res))) return (int) $obj->rowid;
+
+        // German Dolibarr installations commonly use DE as company country for this module use-case.
+        $sql = 'SELECT rowid FROM ' . $table . " WHERE code='DE' OR code_iso='DE' LIMIT 1";
+        $res = $this->db->query($sql);
+        if ($res && ($obj = $this->db->fetch_object($res))) return (int) $obj->rowid;
+
+        return 0;
+    }
 }
