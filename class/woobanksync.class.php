@@ -1007,4 +1007,38 @@ class WooBankSync
 
         return 0;
     }
+
+    private function insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber = '', $payoutAmount = 0)
+    {
+        $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log');
+        $data = array(
+            'entity' => (int) $this->conf->entity,
+            'woo_order_id' => "'" . $this->db->escape((string) ($order['id'] ?? '')) . "'",
+            'woo_order_number' => "'" . $this->db->escape((string) ($order['number'] ?? ($order['id'] ?? ''))) . "'",
+            'woo_transaction_id' => "'" . $this->db->escape((string) ($order['transaction_id'] ?? '')) . "'",
+            'payment_method' => "'" . $this->db->escape((string) ($order['payment_method'] ?? '')) . "'",
+            'dolibarr_bank_account_id' => (int) $bankId,
+            'gross_amount' => price2num($gross, 'MT'),
+            'fee_amount' => price2num($fee, 'MT'),
+            'payout_amount' => price2num($payoutAmount, 'MT'),
+            'currency' => "'" . $this->db->escape((string) ($order['currency'] ?? 'EUR')) . "'",
+            'bank_line_id_gross' => (int) $bankLineGross,
+            'bank_line_id_fee' => (int) $bankLineFee,
+            'woo_invoice_number' => "'" . $this->db->escape((string) $invoiceNumber) . "'",
+            'sync_status' => "'" . $this->db->escape($status) . "'",
+            'sync_message' => "'" . $this->db->escape($message) . "'",
+            'date_order' => !empty($dateOrder) ? "'" . $this->db->escape($dateOrder) . "'" : 'NULL',
+            'date_sync' => $this->sqlDateNow(),
+        );
+        foreach (array_keys($data) as $key) if (!in_array($key, $fields, true)) unset($data[$key]);
+        $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'woobanksync_log (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        return $this->db->query($sql);
+    }
+
+    private function isOrderSynced($orderId)
+    {
+        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity . " AND woo_order_id='" . $this->db->escape((string) $orderId) . "' AND sync_status IN ('synced','dryrun')";
+        $res = $this->db->query($sql);
+        return ($res && $this->db->num_rows($res) > 0);
+    }
 }
