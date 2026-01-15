@@ -36,4 +36,51 @@ class WbsWooCommerceClient
         // timezone is explicit and URL encoding is safe.
         return $dt->format('Y-m-d\T00:00:00\Z');
     }
+
+    private function request($method, $path, $params = array())
+    {
+        $this->error = '';
+        if (empty($this->baseUrl) || empty($this->consumerKey) || empty($this->consumerSecret)) {
+            $this->error = 'WooCommerce URL, consumer key or consumer secret is missing.';
+            return false;
+        }
+
+        $url = $this->baseUrl . $path;
+        $params['consumer_key'] = $this->consumerKey;
+        $params['consumer_secret'] = $this->consumerSecret;
+        $url .= '?' . http_build_query($params);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 90);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Dolibarr WooBankSync/1.1');
+
+        $body = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($body === false || !empty($curlError)) {
+            $this->error = 'cURL error: ' . $curlError;
+            return false;
+        }
+
+        $json = json_decode($body, true);
+        if ($httpCode < 200 || $httpCode >= 300) {
+            $message = is_array($json) && !empty($json['message']) ? $json['message'] : $body;
+            $this->error = 'WooCommerce HTTP ' . $httpCode . ': ' . $message;
+            return false;
+        }
+
+        if (!is_array($json)) {
+            $this->error = 'Invalid JSON response from WooCommerce.';
+            return false;
+        }
+
+        return $json;
+    }
 }
