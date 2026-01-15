@@ -1057,4 +1057,29 @@ class WooBankSync
         $cache[$table] = $columns;
         return $columns;
     }
+
+    private function normalizeAmount($value)
+    {
+        if (is_array($value)) {
+            if (isset($value['amount'])) $value = $value['amount'];
+            elseif (isset($value['value'])) $value = $value['value'];
+            else return 0.0;
+        }
+        $value = str_replace(array('€', ' ', ','), array('', '', '.'), (string) $value);
+        return (float) $value;
+    }
+
+    private function sqlDateNow()
+    {
+        return "'" . $this->db->escape(dol_print_date(dol_now(), '%Y-%m-%d %H:%M:%S')) . "'";
+    }
+
+    private function wooDateToSql($date)
+    {
+        if (empty($date)) return dol_print_date(dol_now(), '%Y-%m-%d %H:%M:%S');
+        $ts = strtotime((string) $date);
+        if ($ts === false) return dol_print_date(dol_now(), '%Y-%m-%d %H:%M:%S');
+        return date('Y-m-d H:i:s', $ts);
+    }
+
 }
