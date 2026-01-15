@@ -438,4 +438,68 @@ class WooBankSync
 
         return array(true, implode(' ', $messages));
     }
+
+    public function createDocumentFolder()
+    {
+        $folderId = $this->findOrCreateEcmFolder('Woo Invoices');
+        if ($folderId > 0) {
+            $this->setConst('WBS_DOCUMENT_FOLDER_ID', (string) $folderId, 'chaine');
+        }
+        return array($folderId > 0, $folderId > 0 ? 'Woo Invoices ECM folder is ready.' : 'Could not create/find ECM folder. Is Documents/ECM module enabled?');
+    }
+
+    public function getBankExtraFields()
+    {
+        $fields = array();
+        $sql = 'SELECT name, label FROM ' . MAIN_DB_PREFIX . "extrafields WHERE elementtype='bank' AND entity IN (0," . (int) $this->conf->entity . ") AND type IN ('varchar','text') ORDER BY pos, label";
+        $resql = $this->db->query($sql);
+        if ($resql) {
+            while ($obj = $this->db->fetch_object($resql)) {
+                $code = (string) $obj->name;
+                if (!isset($fields[$code])) $fields[$code] = (string) $obj->label;
+            }
+        }
+        return $fields;
+    }
+
+    public function createAndMapInvoiceBankExtraField()
+    {
+        $mapped = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        if ($mapped !== '') return array(false, 'A bank-entry custom field is already mapped.');
+
+        $code = 'woo_invoice_number';
+        $fields = $this->getBankExtraFields();
+        if (!isset($fields[$code])) {
+            require_once DOL_DOCUMENT_ROOT . '/core/class/extrafields.class.php';
+            $extrafields = new ExtraFields($this->db);
+            $result = $extrafields->addExtraField(
+                $code,
+                'WooCommerce invoice number',
+                'varchar',
+                100,
+                '255',
+                'bank',
+                0,
+                0,
+                '',
+                '',
+                1,
+                '',
+                '1',
+                'Invoice number imported from WooCommerce',
+                '',
+                (string) $this->conf->entity,
+                '',
+                '1'
+            );
+            if ($result <= 0) {
+                $error = !empty($extrafields->error) ? $extrafields->error : $this->db->lasterror();
+                return array(false, 'Could not create the bank-entry custom field: ' . $error);
+            }
+        }
+
+        $this->setConst('WBS_BANK_EXTRAFIELD_CODE', $code, 'chaine');
+        $this->setConst('WBS_BANK_EXTRAFIELD_ENABLED', '1', 'yesno');
+        return array(true, 'Bank-entry custom field "WooCommerce invoice number" was created or reused, mapped, and enabled.');
+    }
 }
