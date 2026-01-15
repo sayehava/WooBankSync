@@ -502,4 +502,52 @@ class WooBankSync
         $this->setConst('WBS_BANK_EXTRAFIELD_ENABLED', '1', 'yesno');
         return array(true, 'Bank-entry custom field "WooCommerce invoice number" was created or reused, mapped, and enabled.');
     }
+
+    public function saveGatewayMapFromPost()
+    {
+        $gateways = $this->getJsonConst('WBS_GATEWAYS_JSON', array());
+        $map = array();
+        foreach ($gateways as $gateway) {
+            $gid = (string) $gateway['id'];
+            $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $gid);
+            $map[$gid] = array(
+                'bank_id' => (int) GETPOST('WBS_MAP_BANK_' . $safe, 'int'),
+                'fee_key' => GETPOST('WBS_MAP_FEE_' . $safe, 'restricthtml'),
+                'payout_key' => GETPOST('WBS_MAP_PAYOUT_' . $safe, 'restricthtml'),
+            );
+        }
+        $this->setConst('WBS_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
+    }
+
+    public function gatewayMap()
+    {
+        $map = $this->getJsonConst('WBS_GATEWAY_MAP_JSON', array());
+        if (!empty($map)) return $map;
+
+        $legacy = array();
+        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_PAYPAL')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_PAYPAL_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_STRIPE')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_STRIPE_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_AMAZONPAY')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_AMAZONPAY_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_BANK')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_DIRECT_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        return $legacy;
+    }
+
+    private function resolveGatewayConfig($paymentMethod, $map)
+    {
+        $paymentMethod = (string) $paymentMethod;
+        if (!empty($map[$paymentMethod]) && !empty($map[$paymentMethod]['bank_id'])) {
+            $map[$paymentMethod]['_mapped_from'] = $paymentMethod;
+            return $map[$paymentMethod];
+        }
+
+        $aliases = $this->gatewayAliases($paymentMethod);
+        foreach ($aliases as $alias) {
+            if (!empty($map[$alias]) && !empty($map[$alias]['bank_id'])) {
+                $map[$alias]['_mapped_from'] = $alias;
+                return $map[$alias];
+            }
+        }
+
+        return array();
+    }
 }
