@@ -273,4 +273,102 @@ class WooBankSync
         return array(true, $message);
     }
 
+
+    public function desyncAllSyncedEntries()
+    {
+        $table = MAIN_DB_PREFIX . 'woobanksync_log';
+        $bankIds = array();
+
+        // 1) Prefer exact bank row ids stored in our sync log.
+        $resql = $this->db->query('SELECT bank_line_id_gross, bank_line_id_fee, dolibarr_bank_account_id FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity);
+        $bankAccountIds = array();
+        if ($resql) {
+            while ($obj = $this->db->fetch_object($resql)) {
+                if (!empty($obj->bank_line_id_gross)) $bankIds[] = (int) $obj->bank_line_id_gross;
+                if (!empty($obj->bank_line_id_fee)) $bankIds[] = (int) $obj->bank_line_id_fee;
+                if (!empty($obj->dolibarr_bank_account_id)) $bankAccountIds[] = (int) $obj->dolibarr_bank_account_id;
+            }
+        } else {
+            return array(false, 'Could not read WooBankSync log: ' . $this->db->lasterror());
+        }
+
+        // 2) Also include mapped virtual bank accounts so older rows whose ids were not logged can be found safely.
+        $map = $this->gatewayMap();
+        foreach ($map as $gatewayConfig) {
+            if (!empty($gatewayConfig['bank_id'])) $bankAccountIds[] = (int) $gatewayConfig['bank_id'];
+        }
+        $bankAccountIds = array_values(array_unique(array_filter($bankAccountIds)));
+
+        // 3) Fallback for older module versions: find rows created by WooBankSync by label pattern.
+        // This is intentionally conservative, so manually-created unrelated bank entries are not touched.
+        $where = array();
+        $where[] = "label LIKE '" . $this->db->escape('WOO - #%') . "'";
+        $where[] = "label LIKE '" . $this->db->escape('Payment fee for WOO - #%') . "'";
+        $where[] = "label LIKE '" . $this->db->escape('[DRY RUN] WOO - #%') . "'";
+        if (!empty($bankAccountIds)) {
+            $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'bank WHERE fk_account IN (' . implode(',', array_map('intval', $bankAccountIds)) . ') AND (' . implode(' OR ', $where) . ')';
+            $res = $this->db->query($sql);
+            if ($res) {
+                while ($obj = $this->db->fetch_object($res)) {
+                    if (!empty($obj->rowid)) $bankIds[] = (int) $obj->rowid;
+                }
+            }
+        }
+
+        // 4) Last safety net: rows referenced by Number/Check field and Woo labels, regardless of account id.
+        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'bank WHERE (' . implode(' OR ', $where) . ')';
+        $res = $this->db->query($sql);
+        if ($res) {
+            while ($obj = $this->db->fetch_object($res)) {
+                if (!empty($obj->rowid)) $bankIds[] = (int) $obj->rowid;
+            }
+        }
+
+        $bankIds = array_values(array_unique(array_filter($bankIds)));
+        $this->db->begin();
+        $deletedBank = 0;
+        $deletedLinks = 0;
+        $deletedClasses = 0;
+
+        if (!empty($bankIds)) {
+            foreach (array_chunk($bankIds, 100) as $chunk) {
+                $ids = implode(',', array_map('intval', $chunk));
+
+                // Remove optional links/classes first. Some Dolibarr installs keep references here.
+                if (!empty($this->getTableColumns(MAIN_DB_PREFIX . 'bank_url'))) {
+                    $count = $this->countRows(MAIN_DB_PREFIX . 'bank_url', 'fk_bank IN (' . $ids . ')');
+                    if (!$this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'bank_url WHERE fk_bank IN (' . $ids . ')')) {
+                        $this->db->rollback();
+                        return array(false, 'Could not delete bank_url links: ' . $this->db->lasterror());
+                    }
+                    $deletedLinks += $count;
+                }
+                if (!empty($this->getTableColumns(MAIN_DB_PREFIX . 'bank_class'))) {
+                    $count = $this->countRows(MAIN_DB_PREFIX . 'bank_class', 'lineid IN (' . $ids . ')');
+                    if (!$this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'bank_class WHERE lineid IN (' . $ids . ')')) {
+                        $this->db->rollback();
+                        return array(false, 'Could not delete bank_class rows: ' . $this->db->lasterror());
+                    }
+                    $deletedClasses += $count;
+                }
+
+                $before = $this->countRows(MAIN_DB_PREFIX . 'bank', 'rowid IN (' . $ids . ')');
+                if (!$this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'bank WHERE rowid IN (' . $ids . ')')) {
+                    $this->db->rollback();
+                    return array(false, 'Could not delete synced bank lines: ' . $this->db->lasterror());
+                }
+                $deletedBank += $before;
+            }
+        }
+
+        $deletedLogs = $this->countRows($table, 'entity=' . (int) $this->conf->entity);
+        $sql = 'DELETE FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity;
+        if (!$this->db->query($sql)) {
+            $this->db->rollback();
+            return array(false, 'Could not clear WooBankSync log: ' . $this->db->lasterror());
+        }
+        $this->db->commit();
+
+        return array(true, 'Desync complete. Deleted ' . (int) $deletedBank . ' bank line(s), ' . (int) $deletedLinks . ' bank link(s), ' . (int) $deletedClasses . ' bank class row(s), and ' . (int) $deletedLogs . ' WooBankSync log row(s).');
+    }
 }
