@@ -834,4 +834,51 @@ class WooBankSync
         }
         return (bool) $this->db->query($sql);
     }
+
+    private function findOrCreateEcmFolder($label)
+    {
+        $table = MAIN_DB_PREFIX . 'ecm_directories';
+        if (empty($this->getTableColumns($table))) return 0;
+        $sql = 'SELECT rowid FROM ' . $table . " WHERE entity=" . (int) $this->conf->entity . " AND label='" . $this->db->escape($label) . "' LIMIT 1";
+        $res = $this->db->query($sql);
+        if ($res && ($obj = $this->db->fetch_object($res))) return (int) $obj->rowid;
+
+        $this->ensurePhysicalEcmFolder($label);
+        $fields = $this->getTableColumns($table);
+        $data = array();
+        $relpath = $this->sanitizeEcmRelPath($label);
+        $this->addDataIfColumn($data, $fields, 'label', "'" . $this->db->escape($label) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'description', "'WooCommerce PDF invoices / invoice references'", false);
+        $this->addDataIfColumn($data, $fields, 'fullpath', "'" . $this->db->escape($relpath) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'relpath', "'" . $this->db->escape($relpath) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'filepath', "'" . $this->db->escape($relpath) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'cachenbofdoc', 0, true);
+        $this->addDataIfColumn($data, $fields, 'fk_parent', 0, true);
+        $this->addDataIfColumn($data, $fields, 'entity', (int) $this->conf->entity, true);
+        $this->addDataIfColumn($data, $fields, 'date_c', $this->sqlDateNow(), false);
+        $this->addDataIfColumn($data, $fields, 'fk_user_c', isset($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : 0, true);
+        $sql = 'INSERT INTO ' . $table . ' (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        $res = $this->db->query($sql);
+        if (!$res) return 0;
+        return (int) $this->db->last_insert_id($table);
+    }
+
+    private function sanitizeEcmRelPath($label)
+    {
+        $label = trim((string) $label);
+        $label = str_replace(array('..', '/', '\\'), array('', ' ', ' '), $label);
+        return $label !== '' ? $label : 'Woo Invoices';
+    }
+
+    private function ensurePhysicalEcmFolder($label)
+    {
+        $relpath = $this->sanitizeEcmRelPath($label);
+        $base = '';
+        if (!empty($this->conf->ecm->dir_output)) $base = $this->conf->ecm->dir_output;
+        elseif (defined('DOL_DATA_ROOT')) $base = DOL_DATA_ROOT . '/ecm';
+        if ($base === '') return false;
+        $dir = rtrim($base, '/\\') . '/' . $relpath;
+        if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        return is_dir($dir);
+    }
 }
