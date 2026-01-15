@@ -937,4 +937,44 @@ class WooBankSync
         return (int) $this->db->last_insert_id($table);
     }
 
+
+    private function makeShortBankRef($gatewayId)
+    {
+        $gatewayId = strtolower((string) $gatewayId);
+        $parts = preg_split('/[^a-z0-9]+/', $gatewayId, -1, PREG_SPLIT_NO_EMPTY);
+        if (empty($parts)) $parts = array('woo');
+
+        $ref = '';
+        foreach ($parts as $part) {
+            $part = preg_replace('/[^a-z0-9]/', '', $part);
+            if ($part === '') continue;
+            $take = (strlen($part) <= 4) ? strlen($part) : 4;
+            $ref .= substr($part, 0, $take);
+            if (strlen($ref) >= 8) break;
+        }
+        if ($ref === '') $ref = 'woo';
+        $ref = strtoupper(substr($ref, 0, 8));
+        return $ref;
+    }
+
+    private function makeUniqueSafeBankRef($baseRef)
+    {
+        $baseRef = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) $baseRef));
+        if ($baseRef === '') $baseRef = 'WOO';
+        $baseRef = substr($baseRef, 0, 8);
+
+        $table = MAIN_DB_PREFIX . 'bank_account';
+        $candidate = $baseRef;
+        for ($i = 0; $i < 100; $i++) {
+            if ($i > 0) {
+                $suffix = (string) $i;
+                $candidate = substr($baseRef, 0, max(1, 8 - strlen($suffix))) . $suffix;
+            }
+            $sql = 'SELECT rowid FROM ' . $table . " WHERE ref='" . $this->db->escape($candidate) . "' LIMIT 1";
+            $res = $this->db->query($sql);
+            if ($res && $this->db->num_rows($res) == 0) return $candidate;
+        }
+        return substr($baseRef, 0, 6) . mt_rand(10, 99);
+    }
+
 }
