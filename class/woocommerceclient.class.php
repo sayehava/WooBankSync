@@ -69,6 +69,27 @@ class WbsWooCommerceClient
         return $dt->format('Y-m-d\T00:00:00\Z');
     }
 
+    public function getRecentOrders($limit = 20)
+    {
+        return $this->request('GET', '/wp-json/wc/v3/orders', array(
+            'orderby' => 'date',
+            'order' => 'desc',
+            'page' => 1,
+            'per_page' => (int) $limit,
+        ));
+    }
+
+    public function getPaymentGateways()
+    {
+        return $this->request('GET', '/wp-json/wc/v3/payment_gateways', array());
+    }
+
+    public function testConnection()
+    {
+        $result = $this->request('GET', '/wp-json/wc/v3/system_status', array());
+        return $result !== false;
+    }
+
     private function request($method, $path, $params = array())
     {
         $this->error = '';
