@@ -241,4 +241,36 @@ class WooBankSync
 
         return array(true, 'Detected ' . count($allGateways) . ' relevant payment methods/gateways (' . count($orders) . ' recent orders scanned). Only active gateways and gateways used in existing orders are listed. Found ' . count($invoiceKeys) . ' possible invoice meta keys.');
     }
+
+    public function autoCreateAndMapAccounts()
+    {
+        $gateways = $this->getJsonConst('WBS_GATEWAYS_JSON', array());
+        if (empty($gateways)) return array(false, 'No active WooCommerce gateways detected. First save API settings and click Refresh from WooCommerce.');
+        $map = $this->gatewayMap();
+        $created = 0;
+        $existing = 0;
+        $failed = array();
+        foreach ($gateways as $gateway) {
+            $gid = (string) $gateway['id'];
+            $title = (string) (!empty($gateway['title']) ? $gateway['title'] : $gid);
+            $label = $title;
+            $ref = $this->makeShortBankRef($gid);
+            $wasExisting = false;
+            $accountId = $this->findOrCreateVirtualBankAccount($label, $ref, $wasExisting);
+            if ($accountId > 0) {
+                if (empty($map[$gid])) $map[$gid] = array();
+                $map[$gid]['bank_id'] = $accountId;
+                if (!isset($map[$gid]['fee_key'])) $map[$gid]['fee_key'] = '';
+                if (!isset($map[$gid]['payout_key'])) $map[$gid]['payout_key'] = '';
+                if ($wasExisting) $existing++; else $created++;
+            } else {
+                $failed[] = $gid . ': ' . $this->db->lasterror();
+            }
+        }
+        $this->setConst('WBS_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
+        $message = 'Created ' . $created . ', reused ' . $existing . ', mapped ' . ($created + $existing) . ' WooCommerce payment methods.';
+        if (!empty($failed)) return array(false, $message . ' Failed: ' . implode(' | ', $failed));
+        return array(true, $message);
+    }
+
 }
