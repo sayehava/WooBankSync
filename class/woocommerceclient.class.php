@@ -14,6 +14,38 @@ class WbsWooCommerceClient
         $this->consumerSecret = (string) $consumerSecret;
     }
 
+    public function getOrders($statuses, $afterDate = '', $page = 1, $perPage = 50)
+    {
+        $params = array(
+            'status' => implode(',', (array) $statuses),
+            'orderby' => 'date',
+            'order' => 'asc',
+            'page' => (int) $page,
+            'per_page' => (int) $perPage,
+        );
+
+        $after = $this->normalizeAfterDate($afterDate);
+        if (!empty($after)) {
+            $params['after'] = $after;
+        }
+
+        $result = $this->request('GET', '/wp-json/wc/v3/orders', $params);
+
+        // Some WooCommerce/German locale installations are strict about the
+        // REST API `after` parameter. If WooCommerce rejects it, retry once
+        // without `after` instead of failing the whole sync.
+        if ($result === false && !empty($params['after']) && stripos($this->error, 'after') !== false) {
+            unset($params['after']);
+            $oldError = $this->error;
+            $result = $this->request('GET', '/wp-json/wc/v3/orders', $params);
+            if ($result === false && empty($this->error)) {
+                $this->error = $oldError;
+            }
+        }
+
+        return $result;
+    }
+
     private function normalizeAfterDate($afterDate)
     {
         $afterDate = trim((string) $afterDate);
