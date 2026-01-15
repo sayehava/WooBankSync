@@ -1082,4 +1082,41 @@ class WooBankSync
         return date('Y-m-d H:i:s', $ts);
     }
 
+
+    private function setConst($name, $value, $type = 'chaine')
+    {
+        if (function_exists('dolibarr_set_const')) {
+            dolibarr_set_const($this->db, $name, $value, $type, 0, '', $this->conf->entity);
+        } else {
+            $sql = "SELECT rowid FROM " . MAIN_DB_PREFIX . "const WHERE name='" . $this->db->escape($name) . "' AND entity=" . ((int) $this->conf->entity);
+            $resql = $this->db->query($sql);
+            if ($resql && ($obj = $this->db->fetch_object($resql))) {
+                $sql = "UPDATE " . MAIN_DB_PREFIX . "const SET value='" . $this->db->escape((string) $value) . "', type='" . $this->db->escape($type) . "', visible=0, note='' WHERE rowid=" . ((int) $obj->rowid);
+            } else {
+                $sql = "INSERT INTO " . MAIN_DB_PREFIX . "const (name, entity, value, type, visible, note) VALUES ('" . $this->db->escape($name) . "', " . ((int) $this->conf->entity) . ", '" . $this->db->escape((string) $value) . "', '" . $this->db->escape($type) . "', 0, '')";
+            }
+            $this->db->query($sql);
+        }
+        if (!isset($this->conf->global)) $this->conf->global = new stdClass();
+        $this->conf->global->$name = $value;
+    }
+
+    private function getConst($name, $default = '')
+    {
+        return isset($this->conf->global->$name) ? $this->conf->global->$name : $default;
+    }
+
+    public function getJsonConst($name, $default = array())
+    {
+        $raw = $this->getConst($name, '');
+        if ($raw === '') return $default;
+        $json = json_decode($raw, true);
+        return is_array($json) ? $json : $default;
+    }
+
+    private function csvToArray($csv)
+    {
+        $items = array_map('trim', explode(',', (string) $csv));
+        return array_values(array_filter($items, static function ($item) { return $item !== ''; }));
+    }
 }
