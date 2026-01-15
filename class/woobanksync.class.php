@@ -1041,4 +1041,20 @@ class WooBankSync
         $res = $this->db->query($sql);
         return ($res && $this->db->num_rows($res) > 0);
     }
+
+    private function addDataIfColumn(&$data, $fields, $key, $value, $numeric)
+    {
+        if (in_array($key, $fields, true)) $data[$key] = $numeric ? (string) $value : (string) $value;
+    }
+
+    private function getTableColumns($table)
+    {
+        static $cache = array();
+        if (isset($cache[$table])) return $cache[$table];
+        $columns = array();
+        $res = $this->db->query('SHOW COLUMNS FROM ' . $table);
+        if ($res) while ($obj = $this->db->fetch_object($res)) $columns[] = $obj->Field;
+        $cache[$table] = $columns;
+        return $columns;
+    }
 }
