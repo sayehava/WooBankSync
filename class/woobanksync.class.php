@@ -741,4 +741,34 @@ class WooBankSync
         }
         return '';
     }
+
+    private function formatInvoiceReferenceForLabel($invoiceNumber)
+    {
+        $invoiceNumber = trim((string) $invoiceNumber);
+        if (preg_match('/^\d+$/', $invoiceNumber)) return '#' . $invoiceNumber;
+        return $invoiceNumber;
+    }
+
+    private function autoDetectFee($order)
+    {
+        $candidates = array();
+        foreach (($order['meta_data'] ?? array()) as $meta) {
+            $key = strtolower((string) ($meta['key'] ?? ''));
+            if (strpos($key, 'fee') !== false || strpos($key, 'fees') !== false || strpos($key, 'gebuehr') !== false || strpos($key, 'gebühr') !== false) {
+                $amount = abs($this->normalizeAmount($meta['value'] ?? 0));
+                if ($amount > 0) $candidates[] = $amount;
+            }
+        }
+        return !empty($candidates) ? max($candidates) : 0.0;
+    }
+
+    private function extractAmountFromConfiguredKey($order, $key)
+    {
+        $key = trim((string) $key);
+        if ($key === '') return 0.0;
+        foreach (($order['meta_data'] ?? array()) as $meta) {
+            if (strcasecmp((string) ($meta['key'] ?? ''), $key) === 0) return abs($this->normalizeAmount($meta['value'] ?? 0));
+        }
+        return 0.0;
+    }
 }
