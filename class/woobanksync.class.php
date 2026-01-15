@@ -550,4 +550,28 @@ class WooBankSync
 
         return array();
     }
+
+    private function gatewayAliases($paymentMethod)
+    {
+        $paymentMethod = strtolower((string) $paymentMethod);
+        $aliases = array();
+
+        if ($paymentMethod === 'paypal') {
+            $aliases = array('ppcp-gateway', 'paypal_standard', 'paypal_express');
+        } elseif ($paymentMethod === 'ppcp-gateway') {
+            $aliases = array('paypal', 'paypal_standard', 'paypal_express');
+        } elseif (strpos($paymentMethod, 'paypal') !== false || strpos($paymentMethod, 'ppcp') !== false) {
+            $aliases = array('ppcp-gateway', 'paypal');
+        } elseif (strpos($paymentMethod, 'stripe') !== false && strpos($paymentMethod, 'amazon') !== false) {
+            $aliases = array('stripe_amazon_pay', 'amazon_pay', 'amazonpay');
+        } elseif (strpos($paymentMethod, 'amazon') !== false) {
+            $aliases = array('stripe_amazon_pay', 'amazon_pay', 'amazonpay');
+        } elseif (strpos($paymentMethod, 'klarna') !== false) {
+            $aliases = array('stripe_klarna', 'klarna');
+        } elseif (strpos($paymentMethod, 'stripe') !== false) {
+            $aliases = array('stripe');
+        }
+
+        return array_values(array_unique(array_filter($aliases, static function ($alias) use ($paymentMethod) { return $alias !== $paymentMethod; })));
+    }
 }
