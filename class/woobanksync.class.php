@@ -796,4 +796,42 @@ class WooBankSync
         if (!$res) return 0;
         return (int) $this->db->last_insert_id(MAIN_DB_PREFIX . 'bank');
     }
+
+    private function setBankInvoiceNumber($bankLineId, $invoiceNumber)
+    {
+        if (!$this->nativeInvoiceReferenceEnabled() || empty($invoiceNumber) || $bankLineId <= 0) return;
+        $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'bank');
+        if (in_array('num_chq', $fields, true)) {
+            $sql = 'UPDATE ' . MAIN_DB_PREFIX . "bank SET num_chq='" . $this->db->escape((string) $invoiceNumber) . "' WHERE rowid=" . (int) $bankLineId;
+            $this->db->query($sql);
+        }
+    }
+
+    private function nativeInvoiceReferenceEnabled()
+    {
+        return (int) $this->getConst('WBS_DOCUMENT_SYNC_ENABLED', '0') === 1;
+    }
+
+    private function setBankInvoiceExtraField($bankLineId, $invoiceNumber)
+    {
+        if ((int) $this->getConst('WBS_BANK_EXTRAFIELD_ENABLED', '0') !== 1 || empty($invoiceNumber) || $bankLineId <= 0) return true;
+
+        $code = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        if ($code === '' || !preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $code)) return false;
+
+        $table = MAIN_DB_PREFIX . 'bank_extrafields';
+        $columns = $this->getTableColumns($table);
+        if (!in_array('fk_object', $columns, true) || !in_array($code, $columns, true)) return false;
+
+        $resql = $this->db->query('SELECT rowid FROM ' . $table . ' WHERE fk_object=' . (int) $bankLineId . ' LIMIT 1');
+        if (!$resql) return false;
+
+        $value = "'" . $this->db->escape((string) $invoiceNumber) . "'";
+        if ($obj = $this->db->fetch_object($resql)) {
+            $sql = 'UPDATE ' . $table . ' SET ' . $code . '=' . $value . ' WHERE rowid=' . (int) $obj->rowid;
+        } else {
+            $sql = 'INSERT INTO ' . $table . ' (fk_object,' . $code . ') VALUES (' . (int) $bankLineId . ',' . $value . ')';
+        }
+        return (bool) $this->db->query($sql);
+    }
 }
