@@ -688,4 +688,57 @@ class WooBankSync
         if (strpos($key, 'id') !== false && !preg_match('/number|nummer|_no(?:_|$)/', $key)) return false;
         return (bool) preg_match('/number|nummer|_no(?:_|$)/', $key);
     }
+
+    private function extractInvoiceNumberFromValue($value, $allowNumeric = false)
+    {
+        if (is_object($value)) $value = (array) $value;
+        if (is_scalar($value)) {
+            $value = trim((string) $value);
+            if ($value === '') return '';
+            // Pure numeric IDs such as invoice_id/document_id are usually internal post IDs,
+            // not invoice numbers. Numeric values are valid for explicit number/nummer fields.
+            if (!$allowNumeric && preg_match('/^\d{1,7}$/', $value)) return '';
+            return dol_trunc($value, 120);
+        }
+        if (!is_array($value)) return '';
+
+        $preferred = array(
+            'formatted_number',
+            'number_formatted',
+            'invoice_number',
+            'document_number',
+            'formatted_invoice_number',
+            'formatted_document_number',
+            'number',
+            'invoiceNo',
+            'invoice_no',
+            'documentNo',
+            'document_no'
+        );
+
+        foreach ($preferred as $field) {
+            if (isset($value[$field])) {
+                $found = $this->extractInvoiceNumberFromValue($value[$field], true);
+                if ($found !== '') return $found;
+            }
+        }
+
+        foreach ($value as $k => $v) {
+            $kl = strtolower((string) $k);
+            if (strpos($kl, 'id') !== false && !preg_match('/number|nummer|no/', $kl)) continue;
+            if (preg_match('/number|nummer|invoice|rechnung|document|beleg/', $kl)) {
+                $found = $this->extractInvoiceNumberFromValue($v, $this->invoiceMetaKeyAllowsNumericValue($kl));
+                if ($found !== '') return $found;
+            }
+        }
+
+        // Last resort: recursively inspect nested arrays.
+        foreach ($value as $v) {
+            if (is_array($v) || is_object($v)) {
+                $found = $this->extractInvoiceNumberFromValue($v);
+                if ($found !== '') return $found;
+            }
+        }
+        return '';
+    }
 }
