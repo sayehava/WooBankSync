@@ -621,4 +621,55 @@ class WooBankSync
         $name = preg_replace('/\s+/', ' ', $name);
         return dol_trunc($name, 80);
     }
+
+    private function extractWooInvoiceNumber($order)
+    {
+        // Invoice extraction is needed when either native storage or custom-field storage is enabled.
+        if (!$this->nativeInvoiceReferenceEnabled() && (int) $this->getConst('WBS_BANK_EXTRAFIELD_ENABLED', '0') !== 1) return '';
+
+        $configuredKeys = $this->getJsonConst('WBS_WOO_INVOICE_KEYS_JSON', array());
+        $defaultKeys = array(
+            '_wc_gzd_invoice_number',
+            '_wc_gzd_order_invoice_number',
+            '_wc_gzd_document_invoice_number',
+            '_wc_gzd_document_number',
+            '_wc_gzd_document_data',
+            '_wc_gzd_invoice',
+            '_wc_gzd_invoices',
+            '_wc_gzdp_invoice_number',
+            '_wc_gzdp_invoice_id',
+            '_wcpdf_invoice_number',
+            '_wcpdf_invoice_number_data',
+            '_wpo_wcpdf_invoice_number',
+            '_wpo_wcpdf_invoice_number_data',
+            '_bewpi_invoice_number',
+            '_invoice_number',
+            'invoice_number',
+            'document_number'
+        );
+        $keys = array_unique(array_merge($configuredKeys, $defaultKeys));
+
+        // First pass: exact known keys.
+        foreach (($order['meta_data'] ?? array()) as $meta) {
+            $key = (string) ($meta['key'] ?? '');
+            foreach ($keys as $wanted) {
+                if (strcasecmp($key, (string) $wanted) === 0) {
+                    $found = $this->extractInvoiceNumberFromValue($meta['value'] ?? '', $this->invoiceMetaKeyAllowsNumericValue($key));
+                    if ($found !== '') return $found;
+                }
+            }
+        }
+
+        // Second pass: heuristic over all invoice/document/rechnung meta keys. This catches
+        // Germanized document payloads where the real number is nested in an array.
+        foreach (($order['meta_data'] ?? array()) as $meta) {
+            $key = strtolower((string) ($meta['key'] ?? ''));
+            if ($this->looksLikeInvoiceMetaKey($key)) {
+                $found = $this->extractInvoiceNumberFromValue($meta['value'] ?? '', $this->invoiceMetaKeyAllowsNumericValue($key));
+                if ($found !== '') return $found;
+            }
+        }
+
+        return '';
+    }
 }
