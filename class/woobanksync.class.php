@@ -153,4 +153,92 @@ class WooBankSync
 
         return array('status' => 'imported', 'message' => $message);
     }
+
+    public function refreshWooDiscovery()
+    {
+        $client = $this->client();
+        $gateways = $client->getPaymentGateways();
+        if ($gateways === false) return array(false, $client->error);
+
+        $gatewayMap = array();
+        $installedGatewayMap = array();
+        foreach ($gateways as $gateway) {
+            $gid = (string) ($gateway['id'] ?? '');
+            if ($gid === '') continue;
+
+            // Keep installed gateways only as a title lookup table.
+            // Do not list disabled-and-never-used gateways such as WeChat, Google Pay, etc.
+            $installedGatewayMap[$gid] = array(
+                'id' => $gid,
+                'title' => (string) ($gateway['title'] ?? $gid),
+                'description' => (string) ($gateway['description'] ?? ''),
+                'enabled' => !empty($gateway['enabled']) ? 1 : 0,
+            );
+
+            if (!empty($gateway['enabled'])) {
+                $gatewayMap[$gid] = array(
+                    'id' => $gid,
+                    'title' => (string) ($gateway['title'] ?? $gid),
+                    'description' => (string) ($gateway['description'] ?? ''),
+                    'enabled' => 1,
+                    'source' => 'active',
+                    'orders_count' => 0,
+                );
+            }
+        }
+
+        $orders = array();
+        $statuses = $this->csvToArray($this->getConst('WBS_ORDER_STATUSES', 'processing,completed'));
+        for ($page = 1; $page <= 5; $page++) {
+            $batch = $client->getOrders($statuses, '', $page, 100);
+            if ($batch === false) return array(false, $client->error);
+            if (empty($batch)) break;
+            foreach ($batch as $order) $orders[] = $order;
+            if (count($batch) < 100) break;
+        }
+
+        foreach ($orders as $order) {
+            $gid = (string) ($order['payment_method'] ?? '');
+            if ($gid === '') continue;
+
+            if (empty($gatewayMap[$gid])) {
+                $title = (string) ($order['payment_method_title'] ?? '');
+                if ($title === '' && !empty($installedGatewayMap[$gid]['title'])) {
+                    $title = (string) $installedGatewayMap[$gid]['title'];
+                }
+                if ($title === '') $title = $gid;
+
+                $gatewayMap[$gid] = array(
+                    'id' => $gid,
+                    'title' => $title,
+                    'description' => 'Historical gateway detected from existing WooCommerce orders.',
+                    'enabled' => !empty($installedGatewayMap[$gid]['enabled']) ? 1 : 0,
+                    'source' => !empty($installedGatewayMap[$gid]['enabled']) ? 'active_used' : 'historical_orders',
+                    'orders_count' => 1,
+                );
+            } else {
+                if (empty($gatewayMap[$gid]['title']) && !empty($order['payment_method_title'])) {
+                    $gatewayMap[$gid]['title'] = (string) $order['payment_method_title'];
+                }
+                $gatewayMap[$gid]['orders_count'] = (int) ($gatewayMap[$gid]['orders_count'] ?? 0) + 1;
+                if (($gatewayMap[$gid]['source'] ?? '') === 'active' && (int) $gatewayMap[$gid]['orders_count'] > 0) {
+                    $gatewayMap[$gid]['source'] = 'active_used';
+                }
+            }
+        }
+
+        $allGateways = array_values($gatewayMap);
+        usort($allGateways, static function ($a, $b) { return strcmp((string) $a['id'], (string) $b['id']); });
+
+        $meta = $this->discoverMetaKeysByGateway($orders);
+        $invoiceKeys = $this->discoverInvoiceKeys($orders);
+        $invoiceAvailable = (!empty($invoiceKeys) || (int) $this->getConst('WBS_DOCUMENT_SYNC_ENABLED', '0') === 1) ? '1' : '0';
+
+        $this->setConst('WBS_GATEWAYS_JSON', json_encode($allGateways), 'chaine');
+        $this->setConst('WBS_META_KEYS_JSON', json_encode($meta), 'chaine');
+        $this->setConst('WBS_WOO_INVOICE_KEYS_JSON', json_encode($invoiceKeys), 'chaine');
+        $this->setConst('WBS_WOO_INVOICE_AVAILABLE', $invoiceAvailable, 'yesno');
+
+        return array(true, 'Detected ' . count($allGateways) . ' relevant payment methods/gateways (' . count($orders) . ' recent orders scanned). Only active gateways and gateways used in existing orders are listed. Found ' . count($invoiceKeys) . ' possible invoice meta keys.');
+    }
 }
