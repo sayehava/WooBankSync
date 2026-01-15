@@ -771,4 +771,29 @@ class WooBankSync
         }
         return 0.0;
     }
+
+    private function insertBankLine($bankId, $amount, $label, $dateSql)
+    {
+        $now = $this->sqlDateNow();
+        $datev = !empty($dateSql) ? "'" . $this->db->escape($dateSql) . "'" : $now;
+        $labelEsc = $this->db->escape($label);
+        $amount = price2num($amount, 'MT');
+
+        $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'bank');
+        $data = array();
+        $this->addDataIfColumn($data, $fields, 'datec', $now, false);
+        $this->addDataIfColumn($data, $fields, 'datev', $datev, false);
+        $this->addDataIfColumn($data, $fields, 'dateo', $datev, false);
+        $this->addDataIfColumn($data, $fields, 'amount', $amount, true);
+        $this->addDataIfColumn($data, $fields, 'label', "'" . $labelEsc . "'", false);
+        $this->addDataIfColumn($data, $fields, 'fk_account', (int) $bankId, true);
+        $this->addDataIfColumn($data, $fields, 'rappro', 0, true);
+        $this->addDataIfColumn($data, $fields, 'entity', (int) $this->conf->entity, true);
+        $this->addDataIfColumn($data, $fields, 'num_chq', "''", false);
+
+        $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'bank (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        $res = $this->db->query($sql);
+        if (!$res) return 0;
+        return (int) $this->db->last_insert_id(MAIN_DB_PREFIX . 'bank');
+    }
 }
