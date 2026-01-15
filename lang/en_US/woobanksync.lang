@@ -1,0 +1,13 @@
+WooBankSync=WooCommerce Bank Sync
+WooBankSyncSetup=WooCommerce Bank Sync setup
+SyncNow=Sync now
+LastSync=Last sync
+ImportedOrders=Imported orders
+SkippedOrders=Skipped orders
+ErrorOrders=Error orders
+WooCommerceSettings=WooCommerce settings
+GatewayMapping=Gateway mapping
+FeeMetaKeys=Fee meta keys
+DryRun=Dry run
+SyncFromDate=Sync from date
+OrderStatuses=Order statuses
