@@ -86,3 +86,57 @@ function wbs_ecm_folder_select($name, $selected)
     $html .= '</select>';
     return $html;
 }
+
+if ($action === 'save_api') {
+    $keys = array('WBS_WOO_URL', 'WBS_WOO_CONSUMER_KEY', 'WBS_WOO_CONSUMER_SECRET', 'WBS_SYNC_FROM_DATE', 'WBS_ORDER_STATUSES', 'WBS_MANUAL_SYNC_PAGES', 'WBS_MANUAL_SYNC_PER_PAGE');
+    foreach ($keys as $key) wbs_set_const_safe($db, $key, GETPOST($key, 'restricthtml'), 'chaine', 0, '', $conf->entity);
+    wbs_set_const_safe($db, 'WBS_DRY_RUN', GETPOST('WBS_DRY_RUN', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
+    setEventMessages('API settings saved.', null, 'mesgs');
+}
+
+if ($action === 'refresh') {
+    list($ok, $msg) = $sync->refreshWooDiscovery();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'autosetup') {
+    list($ok, $msg) = $sync->autoCreateAndMapAccounts();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'save_map') {
+    $sync->saveGatewayMapFromPost();
+    setEventMessages('Payment method mapping saved.', null, 'mesgs');
+}
+
+if ($action === 'save_docs') {
+    wbs_set_const_safe($db, 'WBS_DOCUMENT_SYNC_ENABLED', GETPOST('WBS_DOCUMENT_SYNC_ENABLED', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
+    wbs_set_const_safe($db, 'WBS_DOCUMENT_FOLDER_ID', GETPOST('WBS_DOCUMENT_FOLDER_ID', 'int'), 'chaine', 0, '', $conf->entity);
+    wbs_set_const_safe($db, 'WBS_BANK_EXTRAFIELD_ENABLED', GETPOST('WBS_BANK_EXTRAFIELD_ENABLED', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
+    wbs_set_const_safe($db, 'WBS_BANK_EXTRAFIELD_CODE', GETPOST('WBS_BANK_EXTRAFIELD_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
+    setEventMessages('Document settings saved.', null, 'mesgs');
+}
+
+if ($action === 'create_invoice_extrafield') {
+    list($ok, $msg) = $sync->createAndMapInvoiceBankExtraField();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'createdocs') {
+    list($ok, $msg) = $sync->createDocumentFolder();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'dbcheck') {
+    list($ok, $msg) = $sync->runDatabaseChecks();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'desync') {
+    if (GETPOST('confirm_desync', 'alpha') !== 'yes') {
+        setEventMessages('Desync was not confirmed.', null, 'errors');
+    } else {
+        list($ok, $msg) = $sync->desyncAllSyncedEntries();
+        setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+    }
+}
