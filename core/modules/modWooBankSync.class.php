@@ -116,4 +116,17 @@ class modWooBankSync extends DolibarrModules
             ),
         );
     }
+
+    public function init($options = '')
+    {
+        $sql = array();
+        $result = $this->_load_tables('/woobanksync/sql/');
+        return $this->_init($sql, $options);
+    }
+
+    public function remove($options = '')
+    {
+        $sql = array();
+        return $this->_remove($sql, $options);
+    }
 }
