@@ -881,4 +881,60 @@ class WooBankSync
         if (!is_dir($dir)) @mkdir($dir, 0775, true);
         return is_dir($dir);
     }
+
+    private function findOrCreateVirtualBankAccount($label, $ref, &$wasExisting = false)
+    {
+        $wasExisting = false;
+        $table = MAIN_DB_PREFIX . 'bank_account';
+        $safeRef = $this->makeUniqueSafeBankRef($ref);
+        $sql = 'SELECT rowid FROM ' . $table . " WHERE entity IN (0," . (int) $this->conf->entity . ") AND (label='" . $this->db->escape($label) . "' OR ref='" . $this->db->escape($safeRef) . "') LIMIT 1";
+        $res = $this->db->query($sql);
+        if ($res && ($obj = $this->db->fetch_object($res))) {
+            $wasExisting = true;
+            if (strpos((string) $label, 'Woo ') !== 0) {
+                $this->db->query('UPDATE ' . $table . " SET label='" . $this->db->escape($label) . "' WHERE rowid=" . (int) $obj->rowid . " AND label LIKE 'Woo %'");
+            }
+            return (int) $obj->rowid;
+        }
+
+        if (file_exists(DOL_DOCUMENT_ROOT . '/compta/bank/class/account.class.php')) {
+            require_once DOL_DOCUMENT_ROOT . '/compta/bank/class/account.class.php';
+            $account = new Account($this->db);
+            $account->ref = $safeRef;
+            $account->label = $label;
+            $account->bank = 'Virtual payment clearing account';
+            $account->number = $safeRef;
+            $account->account_number = $safeRef;
+            $account->courant = 1;
+            $account->clos = 0;
+            $account->entity = (int) $this->conf->entity;
+            $account->currency_code = !empty($this->conf->currency) ? $this->conf->currency : 'EUR';
+            $user = isset($GLOBALS['user']) ? $GLOBALS['user'] : null;
+            $id = method_exists($account, 'create') ? $account->create($user) : 0;
+            if ($id > 0) return (int) $id;
+        }
+
+        $fields = $this->getTableColumns($table);
+        $data = array();
+        $this->addDataIfColumn($data, $fields, 'ref', "'" . $this->db->escape($safeRef) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'label', "'" . $this->db->escape($label) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'bank', "'Virtual WooCommerce clearing account'", false);
+        $this->addDataIfColumn($data, $fields, 'number', "'" . $this->db->escape($safeRef) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'account_number', "'" . $this->db->escape($safeRef) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'courant', 1, true);
+        $this->addDataIfColumn($data, $fields, 'clos', 0, true);
+        $this->addDataIfColumn($data, $fields, 'rappro', 0, true);
+        $this->addDataIfColumn($data, $fields, 'entity', (int) $this->conf->entity, true);
+        $this->addDataIfColumn($data, $fields, 'datec', $this->sqlDateNow(), false);
+        $this->addDataIfColumn($data, $fields, 'fk_user_author', isset($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : 0, true);
+        $this->addDataIfColumn($data, $fields, 'fk_user_creat', isset($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : 0, true);
+        $this->addDataIfColumn($data, $fields, 'currency_code', "'" . $this->db->escape(!empty($this->conf->currency) ? $this->conf->currency : 'EUR') . "'", false);
+        $this->addDataIfColumn($data, $fields, 'fk_pays', (int) $this->getDefaultCountryId(), true);
+        if (empty($data)) return 0;
+        $sql = 'INSERT INTO ' . $table . ' (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        $res = $this->db->query($sql);
+        if (!$res) return 0;
+        return (int) $this->db->last_insert_id($table);
+    }
+
 }
