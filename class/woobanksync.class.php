@@ -371,4 +371,71 @@ class WooBankSync
 
         return array(true, 'Desync complete. Deleted ' . (int) $deletedBank . ' bank line(s), ' . (int) $deletedLinks . ' bank link(s), ' . (int) $deletedClasses . ' bank class row(s), and ' . (int) $deletedLogs . ' WooBankSync log row(s).');
     }
+
+    private function countRows($table, $where)
+    {
+        $res = $this->db->query('SELECT COUNT(*) as nb FROM ' . $table . ' WHERE ' . $where);
+        if ($res && ($obj = $this->db->fetch_object($res))) return (int) $obj->nb;
+        return 0;
+    }
+
+    public function runDatabaseChecks()
+    {
+        $messages = array();
+        $prefix = MAIN_DB_PREFIX;
+        $table = $prefix . 'woobanksync_log';
+
+        $sql = "CREATE TABLE IF NOT EXISTS " . $table . " (" .
+            "rowid integer AUTO_INCREMENT PRIMARY KEY," .
+            "entity integer NOT NULL DEFAULT 1," .
+            "woo_order_id varchar(64) NOT NULL," .
+            "woo_order_number varchar(128) DEFAULT NULL," .
+            "woo_transaction_id varchar(255) DEFAULT NULL," .
+            "payment_method varchar(128) DEFAULT NULL," .
+            "dolibarr_bank_account_id integer DEFAULT NULL," .
+            "gross_amount double(24,8) DEFAULT 0," .
+            "fee_amount double(24,8) DEFAULT 0," .
+            "payout_amount double(24,8) DEFAULT 0," .
+            "currency varchar(8) DEFAULT NULL," .
+            "bank_line_id_gross integer DEFAULT NULL," .
+            "bank_line_id_fee integer DEFAULT NULL," .
+            "woo_invoice_number varchar(255) DEFAULT NULL," .
+            "sync_status varchar(32) NOT NULL DEFAULT 'pending'," .
+            "sync_message text," .
+            "date_order datetime DEFAULT NULL," .
+            "date_sync datetime DEFAULT NULL," .
+            "tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" .
+            ") ENGINE=innodb";
+        if (!$this->db->query($sql)) {
+            return array(false, 'Database check failed while creating log table: ' . $this->db->lasterror());
+        }
+        $messages[] = 'Log table is ready.';
+
+        $columns = array(
+            'payout_amount' => 'double(24,8) DEFAULT 0',
+            'woo_invoice_number' => 'varchar(255) DEFAULT NULL',
+            'sync_message' => 'text',
+            'date_sync' => 'datetime DEFAULT NULL'
+        );
+        foreach ($columns as $column => $definition) {
+            $resql = $this->db->query("SHOW COLUMNS FROM " . $table . " LIKE '" . $this->db->escape($column) . "'");
+            if ($resql && $this->db->num_rows($resql) == 0) {
+                if (!$this->db->query("ALTER TABLE " . $table . " ADD COLUMN " . $column . " " . $definition)) {
+                    return array(false, 'Database check failed while adding column ' . $column . ': ' . $this->db->lasterror());
+                }
+                $messages[] = 'Added column ' . $column . '.';
+            }
+        }
+
+        $resql = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_woobanksync_entity_order'");
+        if ($resql && $this->db->num_rows($resql) == 0) {
+            if (!$this->db->query("ALTER TABLE " . $table . " ADD UNIQUE KEY uk_woobanksync_entity_order (entity, woo_order_id)")) {
+                $messages[] = 'Unique key could not be added, maybe duplicate old rows exist: ' . $this->db->lasterror();
+            } else {
+                $messages[] = 'Unique key is ready.';
+            }
+        }
+
+        return array(true, implode(' ', $messages));
+    }
 }
