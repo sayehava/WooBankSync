@@ -672,4 +672,20 @@ class WooBankSync
 
         return '';
     }
+
+    private function looksLikeInvoiceMetaKey($key)
+    {
+        $needles = array('invoice', 'rechnung', 'gzd_document', 'document_invoice', 'document_number', 'wcpdf');
+        foreach ($needles as $needle) {
+            if (strpos((string) $key, $needle) !== false) return true;
+        }
+        return false;
+    }
+
+    private function invoiceMetaKeyAllowsNumericValue($key)
+    {
+        $key = strtolower((string) $key);
+        if (strpos($key, 'id') !== false && !preg_match('/number|nummer|_no(?:_|$)/', $key)) return false;
+        return (bool) preg_match('/number|nummer|_no(?:_|$)/', $key);
+    }
 }
