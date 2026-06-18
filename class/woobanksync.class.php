@@ -393,14 +393,11 @@ class WooBankSync
         $labelBase = 'WOO - #' . $orderNumber;
         if (!empty($newBuyerName)) $labelBase .= ' ' . $newBuyerName;
         if ($showInvoice && !empty($newInvoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($newInvoiceNumber);
-        $bankReference = ($showInvoice && !empty($newInvoiceNumber)) ? $newInvoiceNumber : $orderNumber;
-
         $this->db->begin();
 
         if (!empty($logRow->bank_line_id_gross)) {
             $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'bank SET'
                 . " label='" . $this->db->escape($labelBase) . "'"
-                . ", num_chq='" . $this->db->escape($bankReference) . "'"
                 . ', amount=' . price2num($newGross, 'MT')
                 . ' WHERE rowid=' . (int) $logRow->bank_line_id_gross;
             if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
@@ -410,7 +407,6 @@ class WooBankSync
             $feeLabel = 'Payment fee for ' . $labelBase;
             $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'bank SET'
                 . " label='" . $this->db->escape($feeLabel) . "'"
-                . ", num_chq='" . $this->db->escape($bankReference) . "'"
                 . ', amount=' . price2num(-1 * $newFee, 'MT')
                 . ' WHERE rowid=' . (int) $logRow->bank_line_id_fee;
             if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
