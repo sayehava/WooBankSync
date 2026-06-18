@@ -601,6 +601,23 @@ class WooBankSync
             }
         }
 
+        $cacheTable = $prefix . 'woobanksync_order_cache';
+        $sql = "CREATE TABLE IF NOT EXISTS " . $cacheTable . " (" .
+            "rowid integer AUTO_INCREMENT PRIMARY KEY," .
+            "entity integer NOT NULL DEFAULT 1," .
+            "woo_order_id varchar(64) NOT NULL," .
+            "woo_order_number varchar(128) DEFAULT NULL," .
+            "woo_invoice_number varchar(255) DEFAULT NULL," .
+            "woo_invoice_pdf_url varchar(500) DEFAULT NULL," .
+            "pdf_ecm_filepath varchar(500) DEFAULT NULL," .
+            "date_updated datetime DEFAULT NULL," .
+            "UNIQUE KEY uk_wbs_order_cache (entity, woo_order_id)" .
+            ") ENGINE=innodb";
+        if (!$this->db->query($sql)) {
+            return array(false, 'Database check failed while creating order cache table: ' . $this->db->lasterror());
+        }
+        $messages[] = 'Order cache table is ready.';
+
         return array(true, implode(' ', $messages));
     }
 
