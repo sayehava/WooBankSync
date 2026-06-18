@@ -276,6 +276,142 @@ class WooBankSync
     }
 
 
+    public function resyncDifferences()
+    {
+        $stats = array('checked' => 0, 'updated' => 0, 'unchanged' => 0, 'errors' => 0, 'messages' => array());
+        $table = MAIN_DB_PREFIX . 'woobanksync_log';
+
+        $sql = 'SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity . " AND sync_status='synced' ORDER BY rowid DESC";
+        $resql = $this->db->query($sql);
+        if (!$resql) {
+            $stats['errors']++;
+            $stats['messages'][] = 'Could not read sync log: ' . $this->db->lasterror();
+            return $stats;
+        }
+
+        $logRows = array();
+        while ($obj = $this->db->fetch_object($resql)) {
+            $logRows[] = $obj;
+        }
+
+        if (empty($logRows)) {
+            $stats['messages'][] = 'No synced orders in log.';
+            return $stats;
+        }
+
+        $client = $this->client();
+        $map = $this->gatewayMap();
+
+        foreach (array_chunk($logRows, 50) as $chunk) {
+            $ids = array_map(static function ($r) { return (int) $r->woo_order_id; }, $chunk);
+            $orders = $client->getOrdersByIds($ids);
+            if ($orders === false) {
+                $stats['errors'] += count($chunk);
+                $stats['messages'][] = 'Batch fetch failed: ' . $client->error;
+                continue;
+            }
+
+            $orderById = array();
+            foreach ($orders as $order) {
+                $orderById[(string) $order['id']] = $order;
+            }
+
+            foreach ($chunk as $logRow) {
+                $stats['checked']++;
+                $orderId = (string) $logRow->woo_order_id;
+
+                if (empty($orderById[$orderId])) {
+                    $stats['errors']++;
+                    $stats['messages'][] = 'Order #' . $logRow->woo_order_number . ' not found in WooCommerce.';
+                    continue;
+                }
+
+                $order = $orderById[$orderId];
+                $newInvoiceNumber = $this->extractWooInvoiceNumber($order);
+                $newBuyerName = $this->extractBuyerName($order);
+                $newGross = $this->normalizeAmount($order['total'] ?? 0);
+
+                $paymentMethod = (string) ($order['payment_method'] ?? '');
+                $gatewayConfig = $this->resolveGatewayConfig($paymentMethod, $map);
+                $newFee = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '');
+                if ($newFee <= 0) $newFee = $this->autoDetectFee($order);
+
+                $oldInvoiceNumber = (string) ($logRow->woo_invoice_number ?? '');
+                $oldGross = (float) ($logRow->gross_amount ?? 0);
+                $oldFee = (float) ($logRow->fee_amount ?? 0);
+
+                $invoiceDiff = $newInvoiceNumber !== $oldInvoiceNumber;
+                $grossDiff = abs($newGross - $oldGross) > 0.005;
+                $feeDiff = abs($newFee - $oldFee) > 0.005;
+
+                if (!$invoiceDiff && !$grossDiff && !$feeDiff) {
+                    $stats['unchanged']++;
+                    continue;
+                }
+
+                $changed = array();
+                if ($invoiceDiff) $changed[] = 'invoice_number(' . ($oldInvoiceNumber ?: 'none') . '→' . ($newInvoiceNumber ?: 'none') . ')';
+                if ($grossDiff) $changed[] = 'gross(' . $oldGross . '→' . $newGross . ')';
+                if ($feeDiff) $changed[] = 'fee(' . $oldFee . '→' . $newFee . ')';
+
+                $ok = $this->applyOrderUpdate($logRow, $order, $newInvoiceNumber, $newBuyerName, $newGross, $newFee);
+                if ($ok) {
+                    $stats['updated']++;
+                    $stats['messages'][] = 'Updated #' . $logRow->woo_order_number . ': ' . implode(', ', $changed);
+                } else {
+                    $stats['errors']++;
+                    $stats['messages'][] = 'Failed to update #' . $logRow->woo_order_number . ': ' . $this->db->lasterror();
+                }
+            }
+        }
+
+        return $stats;
+    }
+
+    private function applyOrderUpdate($logRow, $order, $newInvoiceNumber, $newBuyerName, $newGross, $newFee)
+    {
+        $orderNumber = (string) $logRow->woo_order_number;
+        $dateOrder = (string) ($logRow->date_order ?? '');
+
+        $labelBase = 'WOO - #' . $orderNumber;
+        if (!empty($newBuyerName)) $labelBase .= ' ' . $newBuyerName;
+        if (!empty($newInvoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($newInvoiceNumber);
+        $bankReference = !empty($newInvoiceNumber) ? $newInvoiceNumber : $orderNumber;
+
+        $this->db->begin();
+
+        if (!empty($logRow->bank_line_id_gross)) {
+            $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'bank SET'
+                . " label='" . $this->db->escape($labelBase) . "'"
+                . ", num_chq='" . $this->db->escape($bankReference) . "'"
+                . ', amount=' . price2num($newGross, 'MT')
+                . ' WHERE rowid=' . (int) $logRow->bank_line_id_gross;
+            if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
+        }
+
+        if (!empty($logRow->bank_line_id_fee)) {
+            $feeLabel = 'Payment fee for ' . $labelBase;
+            $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'bank SET'
+                . " label='" . $this->db->escape($feeLabel) . "'"
+                . ", num_chq='" . $this->db->escape($bankReference) . "'"
+                . ', amount=' . price2num(-1 * $newFee, 'MT')
+                . ' WHERE rowid=' . (int) $logRow->bank_line_id_fee;
+            if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
+        }
+
+        $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'woobanksync_log SET'
+            . " woo_invoice_number='" . $this->db->escape($newInvoiceNumber) . "'"
+            . ', gross_amount=' . price2num($newGross, 'MT')
+            . ', fee_amount=' . price2num($newFee, 'MT')
+            . ", sync_status='synced'"
+            . ", sync_message='Updated from WooCommerce on " . $this->db->escape(dol_print_date(dol_now(), '%Y-%m-%d %H:%M:%S')) . "'"
+            . ' WHERE rowid=' . (int) $logRow->rowid;
+        if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
+
+        $this->db->commit();
+        return true;
+    }
+
     public function desyncAllSyncedEntries()
     {
         $table = MAIN_DB_PREFIX . 'woobanksync_log';
