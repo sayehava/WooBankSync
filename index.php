@@ -116,6 +116,25 @@ if ($action === 'difference_list') {
     exit;
 }
 
+// ── AJAX: check and update one configured order batch ──
+if ($action === 'difference_batch') {
+    header('Content-Type: application/json');
+    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
+        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
+    }
+    $rawIds = GETPOST('order_ids', 'restricthtml');
+    $orderIds = preg_split('/[^0-9]+/', (string) $rawIds, -1, PREG_SPLIT_NO_EMPTY);
+    $batchSize = max(1, min(100, (int) ($conf->global->WBS_DIFF_BATCH_SIZE ?? 10)));
+    $orderIds = array_slice($orderIds, 0, $batchSize);
+    if (empty($orderIds)) {
+        echo json_encode(array('ok' => false, 'error' => 'No order IDs supplied')); exit;
+    }
+    @set_time_limit(300);
+    $sync = new WooBankSync($db, $conf, $langs);
+    echo json_encode(array('ok' => true, 'result' => $sync->resyncDifferences($orderIds)));
+    exit;
+}
+
 // ── AJAX: download one PDF by order ID from the local cache (no API call) ──
 if ($action === 'download_pdf_single') {
     header('Content-Type: application/json');
