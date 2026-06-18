@@ -1039,6 +1039,54 @@ class WooBankSync
         return (bool) $this->db->query($sql);
     }
 
+    public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl)
+    {
+        return $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl);
+    }
+
+    public function updateCacheEcmPath($orderId, $ecmFilepath)
+    {
+        $escaped = $this->db->escape($ecmFilepath);
+        $oid = $this->db->escape((string) $orderId);
+        $entity = (int) $this->conf->entity;
+        $now = $this->sqlDateNow();
+        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_order_cache SET pdf_ecm_filepath='" . $escaped . "', date_updated=" . $now . " WHERE entity=" . $entity . " AND woo_order_id='" . $oid . "'");
+        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_log SET pdf_ecm_filepath='" . $escaped . "' WHERE entity=" . $entity . " AND woo_order_id='" . $oid . "' AND sync_status='synced'");
+    }
+
+    public function getPendingPdfOrders()
+    {
+        $rows = array();
+        $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
+            . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND (woo_invoice_pdf_url IS NOT NULL AND woo_invoice_pdf_url != '')"
+            . " AND (pdf_ecm_filepath IS NULL OR pdf_ecm_filepath = '')"
+            . ' ORDER BY rowid DESC';
+        $resql = $this->db->query($sql);
+        if (!$resql) return $rows;
+        while ($obj = $this->db->fetch_object($resql)) {
+            $rows[] = array(
+                'id' => (string) $obj->woo_order_id,
+                'number' => (string) $obj->woo_order_number,
+                'invoice' => (string) ($obj->woo_invoice_number ?? ''),
+                'pdf_url' => (string) $obj->woo_invoice_pdf_url,
+            );
+        }
+        return $rows;
+    }
+
+    private function upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath)
+    {
+        $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        if (empty($this->getTableColumns($table))) return;
+        $e = (int) $this->conf->entity;
+        $now = $this->sqlDateNow();
+        $sql = "INSERT INTO " . $table . " (entity,woo_order_id,woo_order_number,woo_invoice_number,woo_invoice_pdf_url,pdf_ecm_filepath,date_updated)"
+            . " VALUES (" . $e . ",'" . $this->db->escape($orderId) . "','" . $this->db->escape($orderNumber) . "','" . $this->db->escape($invoiceNumber) . "','" . $this->db->escape($pdfUrl) . "','" . $this->db->escape($ecmFilepath) . "'," . $now . ")"
+            . " ON DUPLICATE KEY UPDATE woo_order_number=VALUES(woo_order_number),woo_invoice_number=VALUES(woo_invoice_number),woo_invoice_pdf_url=VALUES(woo_invoice_pdf_url),pdf_ecm_filepath=IF(VALUES(pdf_ecm_filepath)!='',VALUES(pdf_ecm_filepath),pdf_ecm_filepath),date_updated=VALUES(date_updated)";
+        $this->db->query($sql);
+    }
+
     private function downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl)
     {
         if (empty($pdfUrl)) return '';
