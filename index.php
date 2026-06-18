@@ -60,7 +60,7 @@ if ($action === 'full_cache_refresh_list') {
         'ok' => true,
         'orders' => $sync->getFullCacheRefreshOrders(),
         'germanized_enabled' => !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED),
-        'batch_size' => 10,
+        'batch_size' => max(1, min(100, (int) ($conf->global->WBS_CACHE_BATCH_SIZE ?? 1))),
     ));
     exit;
 }
@@ -179,7 +179,7 @@ $ajaxToken = newToken();
 <input class="button" type="submit" value="Check &amp; update differences" title="Re-fetches all synced orders from WooCommerce and updates Dolibarr bank entries where invoice number, buyer name or amounts differ. WooCommerce is always the source of truth.">
 </form>
 <button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs using URLs already stored locally — no WooCommerce API call">&#128196; Download past invoice PDFs</button>
- <button class="button" type="button" onclick="wbsOpenCacheRefreshModal()" title="Fetch all Woo order data in batches of 10 and merge it into the local JSON cache">&#8635; Refresh full cache</button>
+ <button class="button" type="button" onclick="wbsOpenCacheRefreshModal()" title="Fetch all Woo order data in configured batches and merge it into the local JSON cache">&#8635; Refresh full cache</button>
  <button class="button" type="button" onclick="wbsOpenJsonModal()" title="View the full WooCommerce order responses stored in the local cache">{ } View cached Woo JSON</button>
 <br>
 <?php
@@ -319,7 +319,7 @@ function wbsOpenCacheRefreshModal() {
         .then(function(data) {
             if (!data.ok) throw new Error(data.error || 'Could not load order list');
             var orders = data.orders || [];
-            var batchSize = data.batch_size || 10;
+            var batchSize = data.batch_size || 1;
             document.getElementById('wbsCacheRefreshMode').textContent = data.germanized_enabled
                 ? 'Germanized integration is enabled: Woo order data and Germanized documents will be merged.'
                 : 'Germanized integration is disabled: only WooCommerce order data will be requested.';
