@@ -187,11 +187,7 @@ $ajaxUrl = dol_escape_htmltag($_SERVER['PHP_SELF']);
 $ajaxToken = newToken();
 
 ?>
-<form method="POST" action="<?php echo $ajaxUrl; ?>" style="display:inline-block;margin-right:10px;">
-<input type="hidden" name="token" value="<?php echo $ajaxToken; ?>">
-<input type="hidden" name="action" value="syncnow">
-<input class="button" type="submit" value="Sync now">
-</form>
+<button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
 <form method="POST" action="<?php echo $ajaxUrl; ?>" style="display:inline-block;margin-right:10px;">
 <input type="hidden" name="token" value="<?php echo $ajaxToken; ?>">
 <input type="hidden" name="action" value="resyncdiff">
@@ -298,6 +294,18 @@ if ($resql) {
       <button id="wbsCacheRefreshClose" class="button" style="display:none;" onclick="document.getElementById('wbsCacheRefreshModal').style.display='none';">Close</button>
       <span id="wbsCacheRefreshSummary" style="color:#666;"></span>
     </div>
+  </div>
+</div>
+
+<div id="wbsSyncModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10003;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:84%;max-width:900px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;"><strong>&#8635; Sync WooCommerce orders</strong></div>
+    <div style="padding:14px 20px 10px;">
+      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;"><div id="wbsSyncBar" style="width:0%;height:10px;background:#28a745;transition:width 0.4s ease;"></div></div>
+      <div id="wbsSyncStatus" style="margin-top:7px;color:#555;">Preparing&hellip;</div>
+    </div>
+    <div id="wbsSyncList" style="flex:1;overflow-y:auto;padding:4px 20px 12px;font-size:0.9em;"></div>
+    <div style="padding:12px 20px;border-top:1px solid #ddd;"><button id="wbsSyncClose" class="button" style="display:none;" onclick="location.reload();">Close and refresh</button> <span id="wbsSyncSummary"></span></div>
   </div>
 </div>
 
