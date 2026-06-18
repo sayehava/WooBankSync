@@ -101,6 +101,21 @@ if ($action === 'sync_batch') {
     exit;
 }
 
+// ── AJAX: list orders eligible for difference checking ──
+if ($action === 'difference_list') {
+    header('Content-Type: application/json');
+    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
+        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
+    }
+    $sync = new WooBankSync($db, $conf, $langs);
+    echo json_encode(array(
+        'ok' => true,
+        'orders' => $sync->getDifferenceCheckOrders(),
+        'batch_size' => max(1, min(100, (int) ($conf->global->WBS_DIFF_BATCH_SIZE ?? 10))),
+    ));
+    exit;
+}
+
 // ── AJAX: download one PDF by order ID from the local cache (no API call) ──
 if ($action === 'download_pdf_single') {
     header('Content-Type: application/json');
