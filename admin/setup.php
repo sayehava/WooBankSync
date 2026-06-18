@@ -318,6 +318,69 @@ if ($mappedBankExtraField !== '') {
 <?php
 
 
+$diagData = $sync->getJsonConst('WBS_META_DIAG_JSON', array());
+$diagJson = !empty($diagData) ? json_encode($diagData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+?>
+<br><table class="noborder centpercent">
+<tr class="liste_titre"><td>Diagnostics</td></tr>
+<tr><td>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;margin-right:8px;">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="diagnose_meta">
+<input class="button" type="submit" value="Inspect WooCommerce order meta (last 10 orders)">
+</form>
+<?php
+if (!empty($diagData)) {
+?>
+<button class="button" type="button" onclick="document.getElementById('wbsDiagModal').style.display='flex';">View last results</button>
+<?php
+}
+?>
+<br><span class="opacitymedium">Fetches 10 recent orders from WooCommerce and shows every meta_data key the API returns. Use this to find where Germanized or other plugins store the invoice number.</span>
+</td></tr></table>
+<?php
+
+if (!empty($diagData)) {
+    $diagJsonEscaped = htmlspecialchars($diagJson, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+?>
+<div id="wbsDiagModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:88%;max-width:1100px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
+      <strong>WooCommerce order meta diagnostic</strong>
+      <button type="button" onclick="document.getElementById('wbsDiagModal').style.display='none';" style="border:none;background:none;font-size:22px;line-height:1;cursor:pointer;color:#666;">&times;</button>
+    </div>
+    <div style="padding:16px 20px;overflow-y:auto;flex:1;">
+<?php
+?>
+      <pre id="wbsDiagPre" style="font-size:0.82em;margin:0;white-space:pre-wrap;word-break:break-all;"><?php echo $diagJsonEscaped; ?></pre>
+<?php
+?>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:10px;">
+      <button class="button" type="button" onclick="wbsDownloadDiag()">Download as JSON</button>
+      <button class="button" type="button" onclick="document.getElementById('wbsDiagModal').style.display='none';">Close</button>
+    </div>
+  </div>
+</div>
+<?php
+?>
+<script>
+var _wbsDiagJson = <?php echo $diagJson; ?>;
+function wbsDownloadDiag(){
+  var blob=new Blob([JSON.stringify(_wbsDiagJson,null,2)],{type:"application/json"});
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="wbs-meta-diagnostic.json";document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
+<?php
+    if ($action === 'diagnose_meta') {
+?>
+document.getElementById("wbsDiagModal").style.display="flex";
+<?php
+    }
+?>
+</script>
+<?php
+}
+
 ?>
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td>Danger zone</td></tr>
