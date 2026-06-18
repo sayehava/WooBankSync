@@ -331,11 +331,13 @@ class WooBankSync
                 }
 
                 $order = $orderById[$orderId];
-                $newInvoiceNumber = $this->extractWooInvoiceNumber($order);
-                // Bulk resync uses only the list response and existing cache.
-                // Per-order Germanized document requests are too slow for this loop.
-                $alreadyHasUrl = !empty($logRow->woo_invoice_pdf_url);
-                $newPdfUrl = $alreadyHasUrl ? (string) $logRow->woo_invoice_pdf_url : $this->extractWooInvoicePdfUrlFromOrder($order);
+                $germanizedEnabled = (int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') === 1;
+                $oldInvoiceNumber = (string) ($logRow->woo_invoice_number ?? '');
+                $oldPdfUrl = (string) ($logRow->woo_invoice_pdf_url ?? '');
+                $newInvoiceNumber = $germanizedEnabled ? $this->extractWooInvoiceNumber($order) : $oldInvoiceNumber;
+                // Difference checking uses only data already present in the Woo order response.
+                // It never calls Germanized document endpoints.
+                $newPdfUrl = $germanizedEnabled ? ($oldPdfUrl !== '' ? $oldPdfUrl : $this->extractWooInvoicePdfUrlFromOrder($order)) : $oldPdfUrl;
                 $newBuyerName = $this->extractBuyerName($order);
                 $newGross = $this->normalizeAmount($order['total'] ?? 0);
 
@@ -344,21 +346,19 @@ class WooBankSync
                 $newFee = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '');
                 if ($newFee <= 0) $newFee = $this->autoDetectFee($order);
 
-                $oldInvoiceNumber = (string) ($logRow->woo_invoice_number ?? '');
                 $oldGross = (float) ($logRow->gross_amount ?? 0);
                 $oldFee = (float) ($logRow->fee_amount ?? 0);
-                $oldPdfUrl = (string) ($logRow->woo_invoice_pdf_url ?? '');
                 $oldEcmPath = (string) ($logRow->pdf_ecm_filepath ?? '');
 
-                $invoiceDiff = $newInvoiceNumber !== $oldInvoiceNumber;
+                $invoiceDiff = $germanizedEnabled && $newInvoiceNumber !== $oldInvoiceNumber;
                 $grossDiff = abs($newGross - $oldGross) > 0.005;
                 $feeDiff = abs($newFee - $oldFee) > 0.005;
                 $pdfDownloadEnabled = (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1;
-                $pdfMissing = $pdfDownloadEnabled && $newPdfUrl !== '' && $oldEcmPath === '';
-                $pdfUrlChanged = $newPdfUrl !== $oldPdfUrl;
+                $pdfMissing = $germanizedEnabled && $pdfDownloadEnabled && $newPdfUrl !== '' && $oldEcmPath === '';
+                $pdfUrlChanged = $germanizedEnabled && $newPdfUrl !== $oldPdfUrl;
 
-                // Always populate cache so the "Download past PDFs" button has data for every order.
-                $this->upsertOrderCache($orderId, (string) $logRow->woo_order_number, $newInvoiceNumber, $newPdfUrl, $oldEcmPath, $order);
+                // Keep only the reconciliation fields current. Full JSON refresh is a separate action.
+                $this->upsertOrderCache($orderId, (string) $logRow->woo_order_number, $newInvoiceNumber, $newPdfUrl, $oldEcmPath);
 
                 if (!$invoiceDiff && !$grossDiff && !$feeDiff && !$pdfMissing && !$pdfUrlChanged) {
                     $stats['unchanged']++;
@@ -434,7 +434,7 @@ class WooBankSync
         if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
 
         $this->db->commit();
-        $this->upsertOrderCache($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl, $pdfEcmFilepath, $order);
+        $this->upsertOrderCache($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl, $pdfEcmFilepath);
         return true;
     }
 
