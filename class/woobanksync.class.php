@@ -63,6 +63,7 @@ class WooBankSync
         $currency = isset($order['currency']) ? (string) $order['currency'] : 'EUR';
         $dateOrder = $this->wooDateToSql($order['date_paid'] ?? ($order['date_created'] ?? null));
         $invoiceNumber = $this->extractWooInvoiceNumber($order);
+        $pdfUrl = $this->extractWooInvoicePdfUrl($order);
         $orderStatus = isset($order['status']) ? (string) $order['status'] : '';
 
         if ($this->isOrderSynced($orderId)) {
@@ -148,9 +149,14 @@ class WooBankSync
             }
         }
 
+        $pdfEcmFilepath = '';
+        if (!$dryRun && $pdfUrl !== '' && (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1) {
+            $pdfEcmFilepath = $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl);
+        }
+
         $status = $dryRun ? 'dryrun' : 'synced';
         $message = ($dryRun ? '[DRY RUN] ' : '') . 'Synced Woo order #' . $orderNumber . ' gross=' . price($gross) . ' fee=' . price($fee) . ' payout=' . price($payout) . ' gateway=' . $paymentMethod . ($mappedPaymentMethod !== $paymentMethod ? ' mapped_to=' . $mappedPaymentMethod : '');
-        $this->insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber, $payout);
+        $this->insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath);
         $this->db->commit();
 
         return array('status' => 'imported', 'message' => $message);
@@ -1252,7 +1258,7 @@ class WooBankSync
         return 0;
     }
 
-    private function insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber = '', $payoutAmount = 0)
+    private function insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber = '', $payoutAmount = 0, $pdfUrl = '', $pdfEcmFilepath = '')
     {
         $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log');
         $data = array(
@@ -1273,6 +1279,8 @@ class WooBankSync
             'sync_message' => "'" . $this->db->escape($message) . "'",
             'date_order' => !empty($dateOrder) ? "'" . $this->db->escape($dateOrder) . "'" : 'NULL',
             'date_sync' => $this->sqlDateNow(),
+            'woo_invoice_pdf_url' => "'" . $this->db->escape((string) $pdfUrl) . "'",
+            'pdf_ecm_filepath' => "'" . $this->db->escape((string) $pdfEcmFilepath) . "'",
         );
         foreach (array_keys($data) as $key) if (!in_array($key, $fields, true)) unset($data[$key]);
         $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'woobanksync_log (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
