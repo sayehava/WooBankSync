@@ -332,11 +332,10 @@ class WooBankSync
 
                 $order = $orderById[$orderId];
                 $newInvoiceNumber = $this->extractWooInvoiceNumber($order);
-                // Skip the expensive Germanized document endpoint call when we already have
-                // a PDF URL stored — extractWooInvoicePdfUrl falls back to it automatically
-                // only when the URL is absent from the order list response.
+                // Bulk resync uses only the list response and existing cache.
+                // Per-order Germanized document requests are too slow for this loop.
                 $alreadyHasUrl = !empty($logRow->woo_invoice_pdf_url);
-                $newPdfUrl = $alreadyHasUrl ? (string) $logRow->woo_invoice_pdf_url : $this->extractWooInvoicePdfUrl($order);
+                $newPdfUrl = $alreadyHasUrl ? (string) $logRow->woo_invoice_pdf_url : $this->extractWooInvoicePdfUrlFromOrder($order);
                 $newBuyerName = $this->extractBuyerName($order);
                 $newGross = $this->normalizeAmount($order['total'] ?? 0);
 
@@ -947,8 +946,25 @@ class WooBankSync
     {
         if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
 
+        $pdfUrl = $this->extractWooInvoicePdfUrlFromOrder($order);
+        if ($pdfUrl !== '') return $pdfUrl;
+
+        // Fallback: call the Germanized document endpoint for this specific order.
+        // Bulk resync intentionally does not use this fallback because it can cause
+        // several HTTP requests per order and exceed the PHP request timeout.
+        if (!empty($order['id'])) {
+            return $this->gzdPdfUrl((int) $order['id'], $order);
+        }
+
+        return '';
+    }
+
+    private function extractWooInvoicePdfUrlFromOrder($order)
+    {
+        if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
+
         // invoices[] is present in list responses but download_url may be absent.
-        // Try all known URL field names first.
+        // Try all known URL field names without making another HTTP request.
         if (!empty($order['invoices']) && is_array($order['invoices'])) {
             foreach ($order['invoices'] as $invoice) {
                 if (!empty($invoice['download_url'])) return (string) $invoice['download_url'];
@@ -956,12 +972,6 @@ class WooBankSync
                 if (!empty($invoice['pdf_url'])) return (string) $invoice['pdf_url'];
                 if (!empty($invoice['url'])) return (string) $invoice['url'];
             }
-        }
-
-        // Fallback: call the Germanized document endpoint for this specific order.
-        // This is needed when the list response omits the download URL.
-        if (!empty($order['id'])) {
-            return $this->gzdPdfUrl((int) $order['id'], $order);
         }
 
         return '';
