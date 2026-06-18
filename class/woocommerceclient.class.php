@@ -79,13 +79,17 @@ class WbsWooCommerceClient
         ));
     }
 
-    public function getOrdersByIds(array $ids)
+    public function getOrdersByIds(array $ids, array $fields = array())
     {
         if (empty($ids)) return array();
-        return $this->request('GET', '/wp-json/wc/v3/orders', array(
+        $params = array(
             'include' => implode(',', array_map('intval', $ids)),
             'per_page' => count($ids),
-        ));
+        );
+        if (!empty($fields)) {
+            $params['_fields'] = implode(',', array_values(array_unique($fields)));
+        }
+        return $this->request('GET', '/wp-json/wc/v3/orders', $params);
     }
 
     public function getPaymentGateways()

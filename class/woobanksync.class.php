@@ -305,10 +305,13 @@ class WooBankSync
 
         $client = $this->client();
         $map = $this->gatewayMap();
+        $germanizedEnabled = (int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') === 1;
+        $requiredFields = array('id', 'number', 'total', 'payment_method', 'billing', 'meta_data');
+        if ($germanizedEnabled) $requiredFields[] = 'invoices';
 
         foreach (array_chunk($logRows, 50) as $chunk) {
             $ids = array_map(static function ($r) { return (int) $r->woo_order_id; }, $chunk);
-            $orders = $client->getOrdersByIds($ids);
+            $orders = $client->getOrdersByIds($ids, $requiredFields);
             if ($orders === false) {
                 $stats['errors'] += count($chunk);
                 $stats['messages'][] = 'Batch fetch failed: ' . $client->error;
@@ -331,7 +334,6 @@ class WooBankSync
                 }
 
                 $order = $orderById[$orderId];
-                $germanizedEnabled = (int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') === 1;
                 $oldInvoiceNumber = (string) ($logRow->woo_invoice_number ?? '');
                 $oldPdfUrl = (string) ($logRow->woo_invoice_pdf_url ?? '');
                 $newInvoiceNumber = $germanizedEnabled ? $this->extractWooInvoiceNumber($order) : $oldInvoiceNumber;
