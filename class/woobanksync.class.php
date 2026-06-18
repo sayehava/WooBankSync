@@ -334,6 +334,7 @@ class WooBankSync
 
                 $order = $orderById[$orderId];
                 $newInvoiceNumber = $this->extractWooInvoiceNumber($order);
+                $newPdfUrl = $this->extractWooInvoicePdfUrl($order);
                 $newBuyerName = $this->extractBuyerName($order);
                 $newGross = $this->normalizeAmount($order['total'] ?? 0);
 
@@ -345,12 +346,17 @@ class WooBankSync
                 $oldInvoiceNumber = (string) ($logRow->woo_invoice_number ?? '');
                 $oldGross = (float) ($logRow->gross_amount ?? 0);
                 $oldFee = (float) ($logRow->fee_amount ?? 0);
+                $oldPdfUrl = (string) ($logRow->woo_invoice_pdf_url ?? '');
+                $oldEcmPath = (string) ($logRow->pdf_ecm_filepath ?? '');
 
                 $invoiceDiff = $newInvoiceNumber !== $oldInvoiceNumber;
                 $grossDiff = abs($newGross - $oldGross) > 0.005;
                 $feeDiff = abs($newFee - $oldFee) > 0.005;
+                $pdfDownloadEnabled = (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1;
+                $pdfMissing = $pdfDownloadEnabled && $newPdfUrl !== '' && $oldEcmPath === '';
+                $pdfUrlChanged = $newPdfUrl !== $oldPdfUrl;
 
-                if (!$invoiceDiff && !$grossDiff && !$feeDiff) {
+                if (!$invoiceDiff && !$grossDiff && !$feeDiff && !$pdfMissing && !$pdfUrlChanged) {
                     $stats['unchanged']++;
                     continue;
                 }
@@ -359,8 +365,10 @@ class WooBankSync
                 if ($invoiceDiff) $changed[] = 'invoice_number(' . ($oldInvoiceNumber ?: 'none') . '→' . ($newInvoiceNumber ?: 'none') . ')';
                 if ($grossDiff) $changed[] = 'gross(' . $oldGross . '→' . $newGross . ')';
                 if ($feeDiff) $changed[] = 'fee(' . $oldFee . '→' . $newFee . ')';
+                if ($pdfMissing) $changed[] = 'pdf_missing(will download)';
+                if ($pdfUrlChanged && !$pdfMissing) $changed[] = 'pdf_url_changed';
 
-                $ok = $this->applyOrderUpdate($logRow, $order, $newInvoiceNumber, $newBuyerName, $newGross, $newFee);
+                $ok = $this->applyOrderUpdate($logRow, $order, $newInvoiceNumber, $newBuyerName, $newGross, $newFee, $newPdfUrl);
                 if ($ok) {
                     $stats['updated']++;
                     $stats['messages'][] = 'Updated #' . $logRow->woo_order_number . ': ' . implode(', ', $changed);
