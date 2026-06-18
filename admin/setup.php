@@ -254,6 +254,32 @@ foreach ($fields as $key => $label) {
 <?php
 
 ?>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>">
+<input type="hidden" name="action" value="save_batch_sizes">
+<table class="noborder centpercent">
+<tr class="liste_titre"><td colspan="2">Workflow batch sizes</td></tr>
+<?php
+$batchFields = array(
+    'WBS_CACHE_BATCH_SIZE' => array('Full cache refresh items per batch', 1),
+    'WBS_SYNC_BATCH_SIZE' => array('Sync items per batch', 10),
+    'WBS_DIFF_BATCH_SIZE' => array('Difference check items per batch', 10),
+);
+foreach ($batchFields as $key => $settings) {
+    $value = max(1, min(100, (int) ($conf->global->$key ?? $settings[1])));
+?>
+<tr><td class="titlefield"><?php echo dol_escape_htmltag($settings[0]); ?></td>
+<td><input class="flat" type="number" min="1" max="100" name="<?php echo $key; ?>" value="<?php echo $value; ?>">
+ <span class="opacitymedium">Allowed range: 1–100</span></td></tr>
+<?php
+}
+?>
+</table>
+<div class="center"><input class="button button-save" type="submit" value="Save batch sizes"></div>
+</form><br>
+<?php
+
+?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;margin-right:8px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="refresh">
 <input class="button" type="submit" value="Refresh active and used payment methods from WooCommerce">
