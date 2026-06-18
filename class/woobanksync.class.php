@@ -670,6 +670,19 @@ class WooBankSync
             }
         }
 
+        // Third pass: Germanized Pro stores invoices as a separate post type, not in order
+        // meta_data. Try the Germanized document REST endpoint for this order.
+        $orderId = (int) ($order['id'] ?? 0);
+        if ($orderId > 0) {
+            $gzdClient = new WbsGermanizedClient(
+                $this->getConst('WBS_WOO_URL'),
+                $this->getConst('WBS_WOO_CONSUMER_KEY'),
+                $this->getConst('WBS_WOO_CONSUMER_SECRET')
+            );
+            $invoiceNumber = $gzdClient->getInvoiceNumber($orderId);
+            if ($invoiceNumber !== '') return $invoiceNumber;
+        }
+
         return '';
     }
 
