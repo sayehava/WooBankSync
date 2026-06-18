@@ -330,6 +330,57 @@ if ($resql) {
 <script>
 var _wbsAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
 var _wbsToken   = <?php echo json_encode(newToken()); ?>;
+var _wbsSyncMaxPages = <?php echo max(1, min(100, (int) ($conf->global->WBS_MANUAL_SYNC_PAGES ?? 5))); ?>;
+
+function wbsOpenSyncModal() {
+    document.getElementById('wbsSyncModal').style.display = 'flex';
+    document.getElementById('wbsSyncBar').style.width = '0%';
+    document.getElementById('wbsSyncList').innerHTML = '';
+    document.getElementById('wbsSyncSummary').textContent = '';
+    document.getElementById('wbsSyncClose').style.display = 'none';
+    wbsRunSyncBatch(1, 0, 0, 0);
+}
+
+function wbsRunSyncBatch(page, imported, skipped, errors) {
+    document.getElementById('wbsSyncStatus').textContent = 'Processing batch ' + page + ' of at most ' + _wbsSyncMaxPages + '…';
+    document.getElementById('wbsSyncBar').style.width = Math.round(((page - 1) / _wbsSyncMaxPages) * 100) + '%';
+    var body = 'action=sync_batch&page=' + page + '&token=' + encodeURIComponent(_wbsToken);
+    fetch(_wbsAjaxUrl, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok) throw new Error(data.error || 'Sync batch failed');
+            var result = data.result || {};
+            imported += result.imported || 0;
+            skipped += result.skipped || 0;
+            errors += result.errors || 0;
+            var list = document.getElementById('wbsSyncList');
+            (result.items || []).forEach(function(item) {
+                var row = document.createElement('div');
+                row.style.cssText = 'padding:7px 0;border-bottom:1px solid #eee;';
+                var icon = item.status === 'imported' ? '✅' : (item.status === 'skipped' ? '⏭️' : '❌');
+                row.textContent = icon + ' #' + item.number + ' — ' + item.message;
+                list.appendChild(row);
+            });
+            list.scrollTop = list.scrollHeight;
+            if (result.has_more && page < _wbsSyncMaxPages) {
+                wbsRunSyncBatch(page + 1, imported, skipped, errors);
+                return;
+            }
+            wbsFinishSync(imported, skipped, errors);
+        })
+        .catch(function(error) {
+            errors++;
+            document.getElementById('wbsSyncList').textContent += '❌ ' + error.message + '\n';
+            wbsFinishSync(imported, skipped, errors);
+        });
+}
+
+function wbsFinishSync(imported, skipped, errors) {
+    document.getElementById('wbsSyncBar').style.width = '100%';
+    document.getElementById('wbsSyncStatus').textContent = 'Sync completed.';
+    document.getElementById('wbsSyncSummary').textContent = '✅ ' + imported + ' imported   ⏭️ ' + skipped + ' skipped   ❌ ' + errors + ' errors';
+    document.getElementById('wbsSyncClose').style.display = 'inline-block';
+}
 
 function wbsOpenCacheRefreshModal() {
     var modal = document.getElementById('wbsCacheRefreshModal');
