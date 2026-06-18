@@ -290,6 +290,9 @@ if (empty($gateways)) {
 
 $gzdEnabled = !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED);
 $labelEnabled = !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED);
+$extraEnabled = !empty($conf->global->WBS_BANK_EXTRAFIELD_ENABLED);
+$mappedBankExtraField = (string) ($conf->global->WBS_BANK_EXTRAFIELD_CODE ?? '');
+$bankExtraFields = $sync->getBankExtraFields();
 ?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
@@ -306,8 +309,35 @@ $labelEnabled = !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED);
 <label><input type="checkbox" name="WBS_DOCUMENT_SYNC_ENABLED" value="1"<?php echo $labelEnabled ? ' checked' : ''; ?>>
  Append invoice number to bank entry label and set the reference/check number field</label>
 </td></tr>
+<tr><td class="titlefield">Store in a custom field</td><td>
+<label><input type="checkbox" name="WBS_BANK_EXTRAFIELD_ENABLED" value="1"<?php echo $extraEnabled ? ' checked' : ''; ?>>
+ Also write the invoice number into a mapped bank-entry custom field</label>
+</td></tr>
+<tr><td class="titlefield">Bank-entry custom field</td><td>
+<select class="flat minwidth300" name="WBS_BANK_EXTRAFIELD_CODE"><option value="">-- not mapped --</option>
+<?php
+foreach ($bankExtraFields as $code => $fieldLabel) {
+?>
+<option value="<?php echo dol_escape_htmltag($code); ?>"<?php echo $code === $mappedBankExtraField ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($fieldLabel . ' (' . $code . ')'); ?></option>
+<?php
+}
+?>
+</select>
+<br><span class="opacitymedium">Select an existing Dolibarr bank-entry custom field, or use the button below to create one automatically.</span>
+</td></tr>
 </table>
 <div class="center"><input class="button button-save" type="submit" value="Save invoice settings"></div>
+</form>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_invoice_extrafield">
+<input class="button" type="submit" value="Create and map invoice-number custom field"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
+<?php
+if ($mappedBankExtraField !== '') {
+?>
+<br><span class="opacitymedium">A custom field is already mapped. Clear the mapping above and save to create a different one.</span>
+<?php
+}
+?>
 </form>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="createdocs">
