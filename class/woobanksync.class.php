@@ -627,6 +627,15 @@ class WooBankSync
     {
         // Always extract — the invoice number goes into the label regardless of storage settings.
 
+        // StoreaBill / Germanized Pro embeds invoice data directly in the order REST response
+        // under $order['invoices']. This is not in meta_data.
+        if (!empty($order['invoices']) && is_array($order['invoices'])) {
+            foreach ($order['invoices'] as $invoice) {
+                if (!empty($invoice['formatted_number'])) return (string) $invoice['formatted_number'];
+                if (!empty($invoice['number'])) return (string) $invoice['number'];
+            }
+        }
+
         $configuredKeys = $this->getJsonConst('WBS_WOO_INVOICE_KEYS_JSON', array());
         $defaultKeys = array(
             '_wc_gzd_invoice_number',
