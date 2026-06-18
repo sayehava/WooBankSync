@@ -121,7 +121,8 @@ class WooBankSync
                 $this->insertLog($order, $bankId, $gross, $fee, 0, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
                 return array('status' => 'errors', 'message' => $msg);
             }
-            $this->setBankInvoiceNumber($bankLineGross, $invoiceNumber);
+            $bankReference = !empty($invoiceNumber) ? $invoiceNumber : $orderNumber;
+            $this->setBankInvoiceNumber($bankLineGross, $bankReference);
             if (!$this->setBankInvoiceExtraField($bankLineGross, $invoiceNumber)) {
                 $this->db->rollback();
                 $msg = 'Failed to store invoice number in the mapped bank-entry custom field for Woo order #' . $orderNumber . ': ' . $this->db->lasterror();
@@ -137,7 +138,7 @@ class WooBankSync
                     $this->insertLog($order, $bankId, $gross, $fee, $bankLineGross, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
                     return array('status' => 'errors', 'message' => $msg);
                 }
-                $this->setBankInvoiceNumber($bankLineFee, $invoiceNumber);
+                $this->setBankInvoiceNumber($bankLineFee, $bankReference);
                 if (!$this->setBankInvoiceExtraField($bankLineFee, $invoiceNumber)) {
                     $this->db->rollback();
                     $msg = 'Failed to store invoice number in the mapped bank-entry custom field for Woo order #' . $orderNumber . ': ' . $this->db->lasterror();
