@@ -16,7 +16,6 @@ if ($action === 'syncnow') {
     @set_time_limit(120);
     try {
         $sync = new WooBankSync($db, $conf, $langs);
-        // Manual sync processes multiple safe pages per click. Configure in setup if needed.
         $pages = max(1, min(20, (int) ($conf->global->WBS_MANUAL_SYNC_PAGES ?? 5)));
         $perPage = max(1, min(100, (int) ($conf->global->WBS_MANUAL_SYNC_PER_PAGE ?? 20)));
         $stats = $sync->sync($pages, $perPage);
@@ -25,6 +24,22 @@ if ($action === 'syncnow') {
         if (!empty($stats['messages'])) setEventMessages('', array_slice($stats['messages'], 0, 200), $stats['errors'] ? 'warnings' : 'mesgs');
     } catch (Throwable $e) {
         dol_syslog('WooBankSync fatal during manual sync: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), LOG_ERR);
+        setEventMessages('WooBankSync stopped with a PHP error: ' . $e->getMessage(), null, 'errors');
+    }
+}
+
+if ($action === 'resyncdiff') {
+    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) accessforbidden();
+    @set_time_limit(300);
+    try {
+        $sync = new WooBankSync($db, $conf, $langs);
+        $stats = $sync->resyncDifferences();
+        $summary = 'Checked: ' . (int) $stats['checked'] . ' / Updated: ' . (int) $stats['updated'] . ' / Unchanged: ' . (int) $stats['unchanged'] . ' / Errors: ' . (int) $stats['errors'];
+        $type = $stats['errors'] ? 'warnings' : ($stats['updated'] ? 'mesgs' : 'mesgs');
+        setEventMessages($summary, null, $type);
+        if (!empty($stats['messages'])) setEventMessages('', array_slice($stats['messages'], 0, 200), $type);
+    } catch (Throwable $e) {
+        dol_syslog('WooBankSync fatal during resync: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), LOG_ERR);
         setEventMessages('WooBankSync stopped with a PHP error: ' . $e->getMessage(), null, 'errors');
     }
 }
