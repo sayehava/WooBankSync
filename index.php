@@ -184,9 +184,6 @@ llxHeader('', $langs->trans('WooBankSync'));
 <?php echo load_fiche_titre($langs->trans('WooBankSync'), '<a href="admin/setup.php">Setup</a>', 'bank'); ?>
 <?php
 
-$ajaxUrl = dol_escape_htmltag($_SERVER['PHP_SELF']);
-$ajaxToken = newToken();
-
 ?>
 <button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
 <button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:10px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
