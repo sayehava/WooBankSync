@@ -157,6 +157,7 @@ class WooBankSync
         $status = $dryRun ? 'dryrun' : 'synced';
         $message = ($dryRun ? '[DRY RUN] ' : '') . 'Synced Woo order #' . $orderNumber . ' gross=' . price($gross) . ' fee=' . price($fee) . ' payout=' . price($payout) . ' gateway=' . $paymentMethod . ($mappedPaymentMethod !== $paymentMethod ? ' mapped_to=' . $mappedPaymentMethod : '');
         $this->insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath);
+        $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $pdfEcmFilepath);
         $this->db->commit();
 
         return array('status' => 'imported', 'message' => $message);
@@ -434,6 +435,7 @@ class WooBankSync
         if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
 
         $this->db->commit();
+        $this->upsertOrderCache($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl, $pdfEcmFilepath);
         return true;
     }
 
