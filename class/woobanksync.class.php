@@ -53,6 +53,36 @@ class WooBankSync
         return $stats;
     }
 
+    public function syncBatch($page, $batchSize)
+    {
+        $page = max(1, (int) $page);
+        $batchSize = max(1, min(100, (int) $batchSize));
+        $stats = array('imported' => 0, 'skipped' => 0, 'errors' => 0, 'messages' => array(), 'items' => array(), 'has_more' => false);
+        $client = $this->client();
+        $statuses = $this->csvToArray($this->getConst('WBS_ORDER_STATUSES', 'processing,completed'));
+        $orders = $client->getOrders($statuses, $this->getConst('WBS_SYNC_FROM_DATE'), $page, $batchSize);
+        if ($orders === false) {
+            $stats['errors'] = 1;
+            $stats['messages'][] = $client->error ?: 'WooCommerce request failed while fetching orders.';
+            return $stats;
+        }
+
+        foreach ($orders as $order) {
+            $result = $this->syncOneOrder($order);
+            $stats[$result['status']]++;
+            if (!empty($result['message'])) $stats['messages'][] = $result['message'];
+            $stats['items'][] = array(
+                'id' => (string) ($order['id'] ?? ''),
+                'number' => (string) ($order['number'] ?? ($order['id'] ?? '')),
+                'status' => $result['status'],
+                'message' => (string) ($result['message'] ?? ''),
+            );
+        }
+        $stats['has_more'] = count($orders) === $batchSize;
+        $this->setConst('WBS_LAST_SYNC', dol_now(), 'chaine');
+        return $stats;
+    }
+
     public function syncOneOrder($order)
     {
         $orderId = (string) ($order['id'] ?? '');
