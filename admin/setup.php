@@ -120,6 +120,9 @@ if ($action === 'save_invoice') {
     wbs_set_const_safe($db, 'WBS_GERMANIZED_PRO_ENABLED', $gzdEnabled, 'yesno', 0, '', $conf->entity);
     $labelEnabled = ($gzdEnabled === '1' && GETPOST('WBS_DOCUMENT_SYNC_ENABLED', 'int')) ? '1' : '0';
     wbs_set_const_safe($db, 'WBS_DOCUMENT_SYNC_ENABLED', $labelEnabled, 'yesno', 0, '', $conf->entity);
+    $extraEnabled = ($gzdEnabled === '1' && GETPOST('WBS_BANK_EXTRAFIELD_ENABLED', 'int')) ? '1' : '0';
+    wbs_set_const_safe($db, 'WBS_BANK_EXTRAFIELD_ENABLED', $extraEnabled, 'yesno', 0, '', $conf->entity);
+    wbs_set_const_safe($db, 'WBS_BANK_EXTRAFIELD_CODE', GETPOST('WBS_BANK_EXTRAFIELD_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
     setEventMessages('Invoice reference settings saved.', null, 'mesgs');
 }
 
