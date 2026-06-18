@@ -424,6 +424,61 @@ function wbsFinishSync(imported, skipped, errors) {
     document.getElementById('wbsSyncClose').style.display = 'inline-block';
 }
 
+function wbsOpenDifferenceModal() {
+    document.getElementById('wbsDifferenceModal').style.display = 'flex';
+    document.getElementById('wbsDifferenceBar').style.width = '0%';
+    document.getElementById('wbsDifferenceList').innerHTML = '';
+    document.getElementById('wbsDifferenceSummary').textContent = '';
+    document.getElementById('wbsDifferenceClose').style.display = 'none';
+    document.getElementById('wbsDifferenceStatus').textContent = 'Loading synced order list…';
+    fetch(_wbsAjaxUrl + '?action=difference_list&token=' + encodeURIComponent(_wbsToken))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok) throw new Error(data.error || 'Could not load orders');
+            wbsRunDifferenceBatch(data.orders || [], data.batch_size || 10, 0, 0, 0, 0);
+        })
+        .catch(function(error) {
+            document.getElementById('wbsDifferenceStatus').textContent = 'Error: ' + error.message;
+            document.getElementById('wbsDifferenceClose').style.display = 'inline-block';
+        });
+}
+
+function wbsRunDifferenceBatch(orders, batchSize, offset, updated, unchanged, errors) {
+    if (offset >= orders.length) {
+        document.getElementById('wbsDifferenceBar').style.width = '100%';
+        document.getElementById('wbsDifferenceStatus').textContent = 'Difference check completed.';
+        document.getElementById('wbsDifferenceSummary').textContent = '✅ ' + updated + ' updated   ➖ ' + unchanged + ' unchanged   ❌ ' + errors + ' errors';
+        document.getElementById('wbsDifferenceClose').style.display = 'inline-block';
+        return;
+    }
+    var batch = orders.slice(offset, offset + batchSize);
+    document.getElementById('wbsDifferenceBar').style.width = Math.round((offset / orders.length) * 100) + '%';
+    document.getElementById('wbsDifferenceStatus').textContent = 'Checking ' + (offset + 1) + '–' + Math.min(offset + batch.length, orders.length) + ' of ' + orders.length + '…';
+    var ids = batch.map(function(order) { return order.id; }).join(',');
+    var body = 'action=difference_batch&order_ids=' + encodeURIComponent(ids) + '&token=' + encodeURIComponent(_wbsToken);
+    fetch(_wbsAjaxUrl, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok) throw new Error(data.error || 'Difference batch failed');
+            var result = data.result || {};
+            var list = document.getElementById('wbsDifferenceList');
+            (result.items || []).forEach(function(item) {
+                var row = document.createElement('div');
+                row.style.cssText = 'padding:7px 0;border-bottom:1px solid #eee;';
+                var icon = item.status === 'updated' ? '✅' : (item.status === 'unchanged' ? '➖' : '❌');
+                row.textContent = icon + ' #' + item.number + (item.changes ? ' — ' + item.changes : '');
+                list.appendChild(row);
+            });
+            list.scrollTop = list.scrollHeight;
+            wbsRunDifferenceBatch(orders, batchSize, offset + batch.length, updated + (result.updated || 0), unchanged + (result.unchanged || 0), errors + (result.errors || 0));
+        })
+        .catch(function(error) {
+            errors += batch.length;
+            document.getElementById('wbsDifferenceList').textContent += '❌ ' + error.message + '\n';
+            wbsRunDifferenceBatch(orders, batchSize, offset + batch.length, updated, unchanged, errors);
+        });
+}
+
 function wbsOpenCacheRefreshModal() {
     var modal = document.getElementById('wbsCacheRefreshModal');
     modal.style.display = 'flex';
