@@ -1057,8 +1057,24 @@ class WooBankSync
 
     private function fetchPdfContent($url)
     {
+        // Germanized Pro download URLs are self-authenticated via an order key embedded
+        // in the URL. Sending Basic auth with consumer credentials breaks these requests.
+        // Try without credentials first, then fall back to Basic auth for REST endpoints.
+        $body = $this->curlGet($url, '', '');
+        if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+
         $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
         $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        if ($key !== '' && $secret !== '') {
+            $body = $this->curlGet($url, $key, $secret);
+            if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+        }
+
+        return false;
+    }
+
+    private function curlGet($url, $key, $secret)
+    {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -1073,10 +1089,8 @@ class WooBankSync
         }
         $body = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
         curl_close($ch);
         if ($httpCode < 200 || $httpCode >= 300 || empty($body)) return false;
-        if (substr($body, 0, 4) !== '%PDF' && stripos($contentType, 'pdf') === false) return false;
         return $body;
     }
 
