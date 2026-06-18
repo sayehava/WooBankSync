@@ -357,6 +357,9 @@ class WooBankSync
                 $pdfMissing = $pdfDownloadEnabled && $newPdfUrl !== '' && $oldEcmPath === '';
                 $pdfUrlChanged = $newPdfUrl !== $oldPdfUrl;
 
+                // Always populate cache so the "Download past PDFs" button has data for every order.
+                $this->upsertOrderCache($orderId, (string) $logRow->woo_order_number, $newInvoiceNumber, $newPdfUrl, $oldEcmPath);
+
                 if (!$invoiceDiff && !$grossDiff && !$feeDiff && !$pdfMissing && !$pdfUrlChanged) {
                     $stats['unchanged']++;
                     continue;
