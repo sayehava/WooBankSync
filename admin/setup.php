@@ -300,6 +300,61 @@ foreach ($bankExtraFields as $code => $label) {
 </table>
 <div class="center"><input class="button button-save" type="submit" value="Save document settings"></div>
 </form>
+<?php
+$diagData = $sync->getJsonConst('WBS_META_DIAG_JSON', array());
+if (!empty($diagData)) {
+?>
+<br><table class="noborder centpercent">
+<tr class="liste_titre"><td colspan="2">Raw meta_data diagnostic — last 10 recent orders</td></tr>
+<?php
+    if (!empty($diagData['error'])) {
+?>
+<tr><td colspan="2" class="error"><?php echo dol_escape_htmltag($diagData['error']); ?></td></tr>
+<?php
+    } else {
+        foreach ($diagData as $orderNum => $keys) {
+?>
+<tr class="oddeven"><td style="vertical-align:top;font-weight:bold;"><?php echo dol_escape_htmltag($orderNum); ?></td><td>
+<?php
+            if (empty($keys)) {
+?>
+<span class="opacitymedium">No meta_data returned by API for this order.</span>
+<?php
+            } else {
+?>
+<table style="width:100%;font-size:0.9em;">
+<?php
+                foreach ($keys as $key => $preview) {
+?>
+<tr><td style="width:40%;font-family:monospace;"><?php echo dol_escape_htmltag($key); ?></td><td class="opacitymedium"><?php echo dol_escape_htmltag($preview); ?></td></tr>
+<?php
+                }
+?>
+</table>
+<?php
+            }
+?>
+</td></tr>
+<?php
+        }
+    }
+?>
+</table>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="diagnose_meta">
+<input class="button" type="submit" value="Re-run meta diagnostic">
+</form><br>
+<?php
+} else {
+?>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="diagnose_meta">
+<input class="button" type="submit" value="Diagnose: show all meta keys from 10 recent orders">
+</form><br>
+<?php
+}
+
+?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_invoice_extrafield">
 <input class="button" type="submit" value="Create and map invoice-number custom field"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
