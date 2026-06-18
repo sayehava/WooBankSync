@@ -106,7 +106,7 @@ class WooBankSync
         $buyerName = $this->extractBuyerName($order);
         $labelBase = 'WOO - #' . $orderNumber;
         if (!empty($buyerName)) $labelBase .= ' ' . $buyerName;
-        if ($this->nativeInvoiceReferenceEnabled() && !empty($invoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($invoiceNumber);
+        if (!empty($invoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($invoiceNumber);
 
         $this->db->begin();
         $bankLineGross = 0;
