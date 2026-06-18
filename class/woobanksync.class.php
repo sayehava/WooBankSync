@@ -1076,17 +1076,34 @@ class WooBankSync
         $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_log SET pdf_ecm_filepath='" . $escaped . "' WHERE entity=" . $entity . " AND woo_order_id='" . $oid . "' AND sync_status='synced'");
     }
 
+    public function isInvoicePdfStored($ecmFilepath)
+    {
+        $ecmFilepath = trim((string) $ecmFilepath, '/\\');
+        if ($ecmFilepath === '') return false;
+
+        $base = !empty($this->conf->ecm->dir_output)
+            ? rtrim($this->conf->ecm->dir_output, '/\\')
+            : (defined('DOL_DATA_ROOT') ? rtrim(DOL_DATA_ROOT, '/\\') . '/ecm' : '');
+        if ($base === '') return false;
+
+        return is_file($base . '/' . $ecmFilepath);
+    }
+
     public function getPendingPdfOrders()
     {
         $rows = array();
-        $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
+        $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND (woo_invoice_pdf_url IS NOT NULL AND woo_invoice_pdf_url != '')"
-            . " AND (pdf_ecm_filepath IS NULL OR pdf_ecm_filepath = '')"
             . ' ORDER BY rowid DESC';
         $resql = $this->db->query($sql);
         if (!$resql) return $rows;
         while ($obj = $this->db->fetch_object($resql)) {
+            $ecmFilepath = (string) ($obj->pdf_ecm_filepath ?? '');
+            if ($this->isInvoicePdfStored($ecmFilepath)) continue;
+            if ($ecmFilepath !== '') {
+                $this->updateCacheEcmPath((string) $obj->woo_order_id, '');
+            }
             $rows[] = array(
                 'id' => (string) $obj->woo_order_id,
                 'number' => (string) $obj->woo_order_number,

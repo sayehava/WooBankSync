@@ -38,12 +38,15 @@ if ($action === 'download_pdf_single') {
     if (empty($row->woo_invoice_pdf_url)) {
         echo json_encode(array('ok' => false, 'error' => 'No PDF URL in cache for this order')); exit;
     }
-    if (!empty($row->pdf_ecm_filepath)) {
+    $sync = new WooBankSync($db, $conf, $langs);
+    if (!empty($row->pdf_ecm_filepath) && $sync->isInvoicePdfStored((string) $row->pdf_ecm_filepath)) {
         echo json_encode(array('ok' => true, 'already' => true, 'filepath' => $row->pdf_ecm_filepath)); exit;
+    }
+    if (!empty($row->pdf_ecm_filepath)) {
+        $sync->updateCacheEcmPath((string) $row->woo_order_id, '');
     }
 
     @set_time_limit(120);
-    $sync = new WooBankSync($db, $conf, $langs);
     $ecmPath = $sync->downloadInvoicePdfPublic(
         (string) $row->woo_order_id,
         (string) $row->woo_order_number,
