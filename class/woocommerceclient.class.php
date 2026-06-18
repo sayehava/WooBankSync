@@ -79,6 +79,15 @@ class WbsWooCommerceClient
         ));
     }
 
+    public function getOrdersByIds(array $ids)
+    {
+        if (empty($ids)) return array();
+        return $this->request('GET', '/wp-json/wc/v3/orders', array(
+            'include' => implode(',', array_map('intval', $ids)),
+            'per_page' => count($ids),
+        ));
+    }
+
     public function getPaymentGateways()
     {
         return $this->request('GET', '/wp-json/wc/v3/payment_gateways', array());
