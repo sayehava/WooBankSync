@@ -132,6 +132,29 @@ if ($action === 'dbcheck') {
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
+if ($action === 'diagnose_meta') {
+    $client = $sync->client();
+    $orders = $client->getRecentOrders(10);
+    if ($orders === false) {
+        wbs_set_const_safe($db, 'WBS_META_DIAG_JSON', json_encode(array('error' => $client->error)), 'chaine', 0, '', $conf->entity);
+        setEventMessages('API request failed: ' . $client->error, null, 'errors');
+    } else {
+        $diagResult = array();
+        foreach ($orders as $order) {
+            $orderNum = '#' . (string) ($order['number'] ?? $order['id']);
+            $keys = array();
+            foreach (($order['meta_data'] ?? array()) as $meta) {
+                $key = (string) ($meta['key'] ?? '');
+                if ($key !== '') $keys[$key] = substr(print_r($meta['value'], true), 0, 120);
+            }
+            ksort($keys);
+            $diagResult[$orderNum] = $keys;
+        }
+        wbs_set_const_safe($db, 'WBS_META_DIAG_JSON', json_encode($diagResult), 'chaine', 0, '', $conf->entity);
+        setEventMessages('Diagnostic complete for ' . count($orders) . ' recent orders. Results shown below.', null, 'mesgs');
+    }
+}
+
 if ($action === 'desync') {
     if (GETPOST('confirm_desync', 'alpha') !== 'yes') {
         setEventMessages('Desync was not confirmed.', null, 'errors');
