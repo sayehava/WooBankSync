@@ -11,6 +11,55 @@ if (!$user->hasRight('banque', 'lire')) accessforbidden();
 
 $action = GETPOST('action', 'aZ09');
 
+// ── AJAX: return list of orders that have a PDF URL but no local ECM file ──
+if ($action === 'pending_pdfs') {
+    header('Content-Type: application/json');
+    $sync = new WooBankSync($db, $conf, $langs);
+    echo json_encode(array('orders' => $sync->getPendingPdfOrders()));
+    exit;
+}
+
+// ── AJAX: download one PDF by order ID from the local cache (no API call) ──
+if ($action === 'download_pdf_single') {
+    header('Content-Type: application/json');
+    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
+        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
+    }
+    $wooOrderId = GETPOST('woo_order_id', 'alphanohtml');
+    if (empty($wooOrderId)) { echo json_encode(array('ok' => false, 'error' => 'Missing order ID')); exit; }
+
+    $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath'
+        . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
+        . ' WHERE entity=' . (int) $conf->entity . " AND woo_order_id='" . $db->escape($wooOrderId) . "' LIMIT 1";
+    $resql = $db->query($sql);
+    if (!$resql || !($row = $db->fetch_object($resql))) {
+        echo json_encode(array('ok' => false, 'error' => 'Order not in cache')); exit;
+    }
+    if (empty($row->woo_invoice_pdf_url)) {
+        echo json_encode(array('ok' => false, 'error' => 'No PDF URL in cache for this order')); exit;
+    }
+    if (!empty($row->pdf_ecm_filepath)) {
+        echo json_encode(array('ok' => true, 'already' => true, 'filepath' => $row->pdf_ecm_filepath)); exit;
+    }
+
+    @set_time_limit(120);
+    $sync = new WooBankSync($db, $conf, $langs);
+    $ecmPath = $sync->downloadInvoicePdfPublic(
+        (string) $row->woo_order_id,
+        (string) $row->woo_order_number,
+        (string) ($row->woo_invoice_number ?? ''),
+        (string) $row->woo_invoice_pdf_url
+    );
+
+    if ($ecmPath !== '') {
+        $sync->updateCacheEcmPath((string) $row->woo_order_id, $ecmPath);
+        echo json_encode(array('ok' => true, 'filepath' => $ecmPath));
+    } else {
+        echo json_encode(array('ok' => false, 'error' => 'Download failed — check PDF URL and folder mapping in Setup'));
+    }
+    exit;
+}
+
 if ($action === 'syncnow') {
     if (!$user->hasRight('woobanksync', 'run') && !$user->admin) accessforbidden();
     @set_time_limit(120);
@@ -35,7 +84,7 @@ if ($action === 'resyncdiff') {
         $sync = new WooBankSync($db, $conf, $langs);
         $stats = $sync->resyncDifferences();
         $summary = 'Checked: ' . (int) $stats['checked'] . ' / Updated: ' . (int) $stats['updated'] . ' / Unchanged: ' . (int) $stats['unchanged'] . ' / Errors: ' . (int) $stats['errors'];
-        $type = $stats['errors'] ? 'warnings' : ($stats['updated'] ? 'mesgs' : 'mesgs');
+        $type = $stats['errors'] ? 'warnings' : 'mesgs';
         setEventMessages($summary, null, $type);
         if (!empty($stats['messages'])) setEventMessages('', array_slice($stats['messages'], 0, 200), $type);
     } catch (Throwable $e) {
@@ -49,24 +98,32 @@ llxHeader('', $langs->trans('WooBankSync'));
 <?php echo load_fiche_titre($langs->trans('WooBankSync'), '<a href="admin/setup.php">Setup</a>', 'bank'); ?>
 <?php
 
+$ajaxUrl = dol_escape_htmltag($_SERVER['PHP_SELF']);
+$ajaxToken = newToken();
+
 ?>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;margin-right:10px;">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>">
+<form method="POST" action="<?php echo $ajaxUrl; ?>" style="display:inline-block;margin-right:10px;">
+<input type="hidden" name="token" value="<?php echo $ajaxToken; ?>">
 <input type="hidden" name="action" value="syncnow">
 <input class="button" type="submit" value="Sync now">
 </form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>">
+<form method="POST" action="<?php echo $ajaxUrl; ?>" style="display:inline-block;margin-right:10px;">
+<input type="hidden" name="token" value="<?php echo $ajaxToken; ?>">
 <input type="hidden" name="action" value="resyncdiff">
 <input class="button" type="submit" value="Check &amp; update differences" title="Re-fetches all synced orders from WooCommerce and updates Dolibarr bank entries where invoice number, buyer name or amounts differ. WooCommerce is always the source of truth.">
-</form><br>
+</form>
+<button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs using URLs already stored locally — no WooCommerce API call">&#128196; Download past invoice PDFs</button>
+<br>
 <?php
 
 if (!empty($conf->global->WBS_LAST_SYNC)) {
 ?>
-<div class="opacitymedium">Last sync: <?php echo dol_print_date((int) $conf->global->WBS_LAST_SYNC, 'dayhour'); ?></div><br>
+<div class="opacitymedium" style="margin-top:6px;">Last sync: <?php echo dol_print_date((int) $conf->global->WBS_LAST_SYNC, 'dayhour'); ?></div>
 <?php
 }
+?>
+<br>
+<?php
 
 $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $conf->entity . ' ORDER BY rowid DESC LIMIT 100';
 $resql = $db->query($sql);
@@ -79,9 +136,9 @@ $resql = $db->query($sql);
 if ($resql) {
     while ($obj = $db->fetch_object($resql)) {
         if (!empty($obj->pdf_ecm_filepath)) {
-            $pdfLink = '<a href="' . DOL_URL_ROOT . '/document.php?modulepart=ecm&file=' . urlencode($obj->pdf_ecm_filepath) . '" target="_blank" title="Download from Dolibarr ECM">&#128196;&nbsp;PDF</a>';
+            $pdfLink = '<a href="' . DOL_URL_ROOT . '/document.php?modulepart=ecm&file=' . urlencode($obj->pdf_ecm_filepath) . '" target="_blank" title="Downloaded — stored in Dolibarr ECM">&#128196;&nbsp;PDF</a>';
         } elseif (!empty($obj->woo_invoice_pdf_url)) {
-            $pdfLink = '<a href="' . dol_escape_htmltag($obj->woo_invoice_pdf_url) . '" target="_blank" title="Download from WooCommerce">&#8599;&nbsp;PDF</a>';
+            $pdfLink = '<a href="' . dol_escape_htmltag($obj->woo_invoice_pdf_url) . '" target="_blank" title="Not yet downloaded — opens directly from WooCommerce">&#8599;&nbsp;PDF</a>';
         } else {
             $pdfLink = '';
         }
@@ -102,11 +159,126 @@ if ($resql) {
     }
 } else {
 ?>
-<tr><td colspan="9"><?php echo dol_escape_htmltag($db->lasterror()); ?></td></tr>
+<tr><td colspan="10"><?php echo dol_escape_htmltag($db->lasterror()); ?></td></tr>
 <?php
 }
 ?>
 </table></div>
+<?php
+
+// ── PDF download modal ────────────────────────────────────────────────────────
+?>
+<div id="wbsPdfModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:82%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
+
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
+      <strong>&#128196; Download past invoice PDFs</strong>
+      <span id="wbsPdfClose" onclick="document.getElementById('wbsPdfModal').style.display='none';" style="cursor:pointer;font-size:22px;line-height:1;color:#666;">&times;</span>
+    </div>
+
+    <div style="padding:14px 20px 10px;">
+      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;">
+        <div id="wbsPdfBar" style="width:0%;height:10px;background:#28a745;border-radius:4px;transition:width 0.4s ease;"></div>
+      </div>
+      <div id="wbsPdfStatus" style="margin-top:6px;font-size:0.88em;color:#555;">Preparing&hellip;</div>
+    </div>
+
+    <div id="wbsPdfList" style="flex:1;overflow-y:auto;padding:4px 20px 10px;font-size:0.9em;"></div>
+
+    <div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:10px;align-items:center;">
+      <button id="wbsPdfDoneBtn" class="button" style="display:none;" onclick="document.getElementById('wbsPdfModal').style.display='none';">Close</button>
+      <span id="wbsPdfSummary" style="font-size:0.88em;color:#666;"></span>
+    </div>
+
+  </div>
+</div>
+
+<script>
+var _wbsAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
+var _wbsToken   = <?php echo json_encode(newToken()); ?>;
+
+function wbsOpenPdfModal() {
+    var modal = document.getElementById('wbsPdfModal');
+    modal.style.display = 'flex';
+    document.getElementById('wbsPdfList').innerHTML = '';
+    document.getElementById('wbsPdfBar').style.width = '0%';
+    document.getElementById('wbsPdfStatus').textContent = 'Fetching pending list…';
+    document.getElementById('wbsPdfDoneBtn').style.display = 'none';
+    document.getElementById('wbsPdfSummary').textContent = '';
+
+    fetch(_wbsAjaxUrl + '?action=pending_pdfs&token=' + encodeURIComponent(_wbsToken))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var orders = data.orders || [];
+            if (orders.length === 0) {
+                document.getElementById('wbsPdfStatus').textContent = 'No pending PDFs found. All invoices are already downloaded, or no PDF URLs are stored yet (run “Check & update differences” first).';
+                document.getElementById('wbsPdfBar').style.width = '100%';
+                document.getElementById('wbsPdfDoneBtn').style.display = 'inline-block';
+                return;
+            }
+            document.getElementById('wbsPdfStatus').textContent = '0 / ' + orders.length + ' downloaded';
+            orders.forEach(function(o) {
+                var row = document.createElement('div');
+                row.id = 'wbs-row-' + o.id;
+                row.style.cssText = 'padding:7px 0;border-bottom:1px solid #f2f2f2;display:flex;align-items:center;gap:10px;';
+                row.innerHTML = '<span id="wbs-icon-' + o.id + '" style="font-size:1.15em;min-width:1.4em;text-align:center;">⏳</span>'
+                    + '<span style="flex:1;">#' + wbsEsc(o.number) + (o.invoice ? ' &ndash; ' + wbsEsc(o.invoice) : '') + '</span>'
+                    + '<span id="wbs-note-' + o.id + '" style="font-size:0.82em;color:#888;"></span>';
+                document.getElementById('wbsPdfList').appendChild(row);
+            });
+            wbsDownloadNext(orders, 0, 0, 0);
+        })
+        .catch(function(e) {
+            document.getElementById('wbsPdfStatus').textContent = 'Error fetching list: ' + e.message;
+            document.getElementById('wbsPdfDoneBtn').style.display = 'inline-block';
+        });
+}
+
+function wbsDownloadNext(orders, idx, ok, fail) {
+    var total = orders.length;
+    if (idx >= total) {
+        document.getElementById('wbsPdfBar').style.width = '100%';
+        document.getElementById('wbsPdfStatus').textContent = 'Done.';
+        document.getElementById('wbsPdfDoneBtn').style.display = 'inline-block';
+        document.getElementById('wbsPdfSummary').textContent = '✅ ' + ok + ' downloaded   ❌ ' + fail + ' failed';
+        return;
+    }
+    var o = orders[idx];
+    var pct = Math.round((idx / total) * 100);
+    document.getElementById('wbsPdfBar').style.width = pct + '%';
+    document.getElementById('wbsPdfStatus').textContent = (idx + 1) + ' / ' + total + '  —  downloading #' + wbsEsc(o.number) + '…';
+    var row = document.getElementById('wbs-row-' + o.id);
+    if (row) row.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+
+    var body = 'action=download_pdf_single&woo_order_id=' + encodeURIComponent(o.id) + '&token=' + encodeURIComponent(_wbsToken);
+    fetch(_wbsAjaxUrl, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body})
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            var icon = document.getElementById('wbs-icon-' + o.id);
+            var note = document.getElementById('wbs-note-' + o.id);
+            if (res.ok) {
+                icon.textContent = res.already ? '✔️' : '✅';
+                note.textContent = res.already ? 'already saved' : 'saved';
+                ok++;
+            } else {
+                icon.textContent = '❌';
+                note.textContent = res.error || 'failed';
+                fail++;
+            }
+            wbsDownloadNext(orders, idx + 1, ok, fail);
+        })
+        .catch(function() {
+            var icon = document.getElementById('wbs-icon-' + o.id);
+            icon.textContent = '❌';
+            fail++;
+            wbsDownloadNext(orders, idx + 1, ok, fail);
+        });
+}
+
+function wbsEsc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
 <?php
 llxFooter();
 $db->close();
