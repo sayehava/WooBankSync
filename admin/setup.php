@@ -134,13 +134,20 @@ if ($action === 'dbcheck') {
 }
 
 if ($action === 'diagnose_meta') {
+    $wooUrl = isset($conf->global->WBS_WOO_URL) ? $conf->global->WBS_WOO_URL : '';
+    $wooKey = isset($conf->global->WBS_WOO_CONSUMER_KEY) ? $conf->global->WBS_WOO_CONSUMER_KEY : '';
+    $wooSecret = isset($conf->global->WBS_WOO_CONSUMER_SECRET) ? $conf->global->WBS_WOO_CONSUMER_SECRET : '';
+
     $client = $sync->client();
     $orders = $client->getRecentOrders(10);
+
     if ($orders === false) {
         wbs_set_const_safe($db, 'WBS_META_DIAG_JSON', json_encode(array('error' => $client->error)), 'chaine', 0, '', $conf->entity);
         setEventMessages('API request failed: ' . $client->error, null, 'errors');
     } else {
-        $diagResult = array();
+        $diagResult = array('meta_data_by_order' => array(), 'germanized_probe' => null);
+
+        // Section 1: meta_data keys from list endpoint for all 10 orders
         foreach ($orders as $order) {
             $orderNum = '#' . (string) ($order['number'] ?? $order['id']);
             $keys = array();
@@ -149,10 +156,19 @@ if ($action === 'diagnose_meta') {
                 if ($key !== '') $keys[$key] = substr(print_r($meta['value'], true), 0, 120);
             }
             ksort($keys);
-            $diagResult[$orderNum] = $keys;
+            $diagResult['meta_data_by_order'][$orderNum] = $keys;
         }
+
+        // Section 2: Germanized Pro probe on most recent order (full single-order
+        // response + all known document endpoints)
+        $firstOrderId = !empty($orders[0]['id']) ? (int) $orders[0]['id'] : 0;
+        if ($firstOrderId > 0) {
+            $gzdClient = new WbsGermanizedClient($wooUrl, $wooKey, $wooSecret);
+            $diagResult['germanized_probe'] = $gzdClient->probeOrder($firstOrderId);
+        }
+
         wbs_set_const_safe($db, 'WBS_META_DIAG_JSON', json_encode($diagResult), 'chaine', 0, '', $conf->entity);
-        setEventMessages('Diagnostic complete for ' . count($orders) . ' recent orders. Results shown below.', null, 'mesgs');
+        setEventMessages('Diagnostic complete for ' . count($orders) . ' orders. Germanized probe on order #' . $firstOrderId . '. Results shown below.', null, 'mesgs');
     }
 }
 
