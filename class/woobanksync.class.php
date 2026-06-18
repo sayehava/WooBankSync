@@ -332,7 +332,11 @@ class WooBankSync
 
                 $order = $orderById[$orderId];
                 $newInvoiceNumber = $this->extractWooInvoiceNumber($order);
-                $newPdfUrl = $this->extractWooInvoicePdfUrl($order);
+                // Skip the expensive Germanized document endpoint call when we already have
+                // a PDF URL stored — extractWooInvoicePdfUrl falls back to it automatically
+                // only when the URL is absent from the order list response.
+                $alreadyHasUrl = !empty($logRow->woo_invoice_pdf_url);
+                $newPdfUrl = $alreadyHasUrl ? (string) $logRow->woo_invoice_pdf_url : $this->extractWooInvoicePdfUrl($order);
                 $newBuyerName = $this->extractBuyerName($order);
                 $newGross = $this->normalizeAmount($order['total'] ?? 0);
 
