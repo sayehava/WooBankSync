@@ -74,15 +74,23 @@ $resql = $db->query($sql);
 ?>
 <div class="div-table-responsive-no-min">
 <table class="liste centpercent">
-<tr class="liste_titre"><th>Date sync</th><th>Woo order</th><th>Invoice</th><th>Gateway</th><th class="right">Gross</th><th class="right">Fee</th><th class="right">Payout</th><th>Status</th><th>Message</th></tr>
+<tr class="liste_titre"><th>Date sync</th><th>Woo order</th><th>Invoice</th><th>PDF</th><th>Gateway</th><th class="right">Gross</th><th class="right">Fee</th><th class="right">Payout</th><th>Status</th><th>Message</th></tr>
 <?php
 if ($resql) {
     while ($obj = $db->fetch_object($resql)) {
+        if (!empty($obj->pdf_ecm_filepath)) {
+            $pdfLink = '<a href="' . DOL_URL_ROOT . '/document.php?modulepart=ecm&file=' . urlencode($obj->pdf_ecm_filepath) . '" target="_blank" title="Download from Dolibarr ECM">&#128196;&nbsp;PDF</a>';
+        } elseif (!empty($obj->woo_invoice_pdf_url)) {
+            $pdfLink = '<a href="' . dol_escape_htmltag($obj->woo_invoice_pdf_url) . '" target="_blank" title="Download from WooCommerce">&#8599;&nbsp;PDF</a>';
+        } else {
+            $pdfLink = '';
+        }
 ?>
 <tr class="oddeven">
 <td><?php echo dol_print_date($db->jdate($obj->date_sync), 'dayhour'); ?></td>
 <td><?php echo dol_escape_htmltag($obj->woo_order_number); ?></td>
 <td><?php echo dol_escape_htmltag($obj->woo_invoice_number ?? ''); ?></td>
+<td><?php echo $pdfLink; ?></td>
 <td><?php echo dol_escape_htmltag($obj->payment_method); ?></td>
 <td class="right"><?php echo price($obj->gross_amount); ?> <?php echo dol_escape_htmltag($obj->currency); ?></td>
 <td class="right"><?php echo price($obj->fee_amount); ?> <?php echo dol_escape_htmltag($obj->currency); ?></td>
