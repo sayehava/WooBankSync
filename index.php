@@ -50,10 +50,15 @@ llxHeader('', $langs->trans('WooBankSync'));
 <?php
 
 ?>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;margin-right:10px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="syncnow">
 <input class="button" type="submit" value="Sync now">
+</form>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>">
+<input type="hidden" name="action" value="resyncdiff">
+<input class="button" type="submit" value="Check &amp; update differences" title="Re-fetches all synced orders from WooCommerce and updates Dolibarr bank entries where invoice number, buyer name or amounts differ. WooCommerce is always the source of truth.">
 </form><br>
 <?php
 
