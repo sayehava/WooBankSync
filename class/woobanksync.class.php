@@ -933,6 +933,9 @@ class WooBankSync
     private function extractWooInvoicePdfUrl($order)
     {
         if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
+
+        // invoices[] is present in list responses but download_url may be absent.
+        // Try all known URL field names first.
         if (!empty($order['invoices']) && is_array($order['invoices'])) {
             foreach ($order['invoices'] as $invoice) {
                 if (!empty($invoice['download_url'])) return (string) $invoice['download_url'];
@@ -941,7 +944,24 @@ class WooBankSync
                 if (!empty($invoice['url'])) return (string) $invoice['url'];
             }
         }
+
+        // Fallback: call the Germanized document endpoint for this specific order.
+        // This is needed when the list response omits the download URL.
+        if (!empty($order['id'])) {
+            return $this->gzdPdfUrl((int) $order['id'], $order);
+        }
+
         return '';
+    }
+
+    private function gzdPdfUrl($orderId, $order = null)
+    {
+        $url = (string) $this->getConst('WBS_WOO_URL', '');
+        $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        if ($url === '' || $key === '' || $secret === '') return '';
+        $gzd = new WbsGermanizedClient($url, $key, $secret);
+        return $gzd->getInvoicePdfUrl($orderId, $order);
     }
 
     private function formatInvoiceReferenceForLabel($invoiceNumber)
