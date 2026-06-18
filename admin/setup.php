@@ -8,6 +8,7 @@ require_once DOL_DOCUMENT_ROOT . '/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT . '/core/lib/bank.lib.php';
 require_once DOL_DOCUMENT_ROOT . '/compta/bank/class/account.class.php';
 require_once __DIR__ . '/../class/woobanksync.class.php';
+require_once __DIR__ . '/../class/wbsgermanizedclient.class.php';
 
 $langs->loadLangs(array('admin', 'banks', 'ecm', 'woobanksync@woobanksync'));
 if (!$user->admin) accessforbidden();
