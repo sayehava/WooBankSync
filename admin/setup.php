@@ -293,6 +293,7 @@ $gzdEnabled = !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED);
 $labelEnabled = !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED);
 $extraEnabled = !empty($conf->global->WBS_BANK_EXTRAFIELD_ENABLED);
 $mappedBankExtraField = (string) ($conf->global->WBS_BANK_EXTRAFIELD_CODE ?? '');
+$mappedFolderId = (string) ($conf->global->WBS_DOCUMENT_FOLDER_ID ?? '');
 $bankExtraFields = $sync->getBankExtraFields();
 ?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
@@ -324,25 +325,36 @@ foreach ($bankExtraFields as $code => $fieldLabel) {
 }
 ?>
 </select>
-<br><span class="opacitymedium">Select an existing Dolibarr bank-entry custom field, or use the button below to create one automatically.</span>
+<br><span class="opacitymedium">Select an existing Dolibarr bank-entry custom field, or use the button below to create and map one automatically.</span>
+</td></tr>
+<tr><td class="titlefield">Invoice PDF document folder</td><td>
+<?php echo wbs_ecm_folder_select('WBS_DOCUMENT_FOLDER_ID', $mappedFolderId); ?>
+<br><span class="opacitymedium">ECM folder where Woo invoice PDFs will be stored. Select an existing folder, or use the button below to create and map one automatically.</span>
 </td></tr>
 </table>
 <div class="center"><input class="button button-save" type="submit" value="Save invoice settings"></div>
 </form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center" style="margin-top:6px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_invoice_extrafield">
-<input class="button" type="submit" value="Create and map invoice-number custom field"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
+<input class="button" type="submit" value="Create invoice-number custom field and map it automatically"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
 <?php
 if ($mappedBankExtraField !== '') {
 ?>
-<br><span class="opacitymedium">A custom field is already mapped. Clear the mapping above and save to create a different one.</span>
+<br><span class="opacitymedium">Already mapped. Clear the field above and save to create a new one.</span>
 <?php
 }
 ?>
 </form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center" style="margin-top:4px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="createdocs">
-<input class="button" type="submit" value="Create Woo Invoices document folder">
+<input class="button" type="submit" value="Create Woo Invoices folder if missing and map it automatically"<?php echo $mappedFolderId !== '' ? ' disabled' : ''; ?>>
+<?php
+if ($mappedFolderId !== '') {
+?>
+<br><span class="opacitymedium">Already mapped. Clear the folder above and save to create a new one.</span>
+<?php
+}
+?>
 </form>
 <?php
 
