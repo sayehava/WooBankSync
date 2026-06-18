@@ -224,6 +224,12 @@ class WbsGermanizedClient
             if (!empty($order[$key]) && is_scalar($order[$key])) return (string) $order[$key];
         }
 
+        // StoreaBill / Germanized Pro: invoices are in $order['invoices']
+        if (!empty($order['invoices']) && is_array($order['invoices'])) {
+            $result = $this->pickInvoiceField($order['invoices'], ($want === 'url') ? $urlKeys : $numberKeys);
+            if ($result !== '') return $result;
+        }
+
         // Check if there is a top-level 'documents' or '_germanized' or 'germanized' object
         foreach (array('documents', '_germanized', 'germanized', 'invoice', 'gzd_documents') as $topKey) {
             if (empty($order[$topKey])) continue;
