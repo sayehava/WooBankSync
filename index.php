@@ -222,11 +222,7 @@ $ajaxToken = newToken();
 
 ?>
 <button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
-<form method="POST" action="<?php echo $ajaxUrl; ?>" style="display:inline-block;margin-right:10px;">
-<input type="hidden" name="token" value="<?php echo $ajaxToken; ?>">
-<input type="hidden" name="action" value="resyncdiff">
-<input class="button" type="submit" value="Check &amp; update differences" title="Re-fetches all synced orders from WooCommerce and updates Dolibarr bank entries where invoice number, buyer name or amounts differ. WooCommerce is always the source of truth.">
-</form>
+<button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:10px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
 <button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs using URLs already stored locally — no WooCommerce API call">&#128196; Download past invoice PDFs</button>
  <button class="button" type="button" onclick="wbsOpenCacheRefreshModal()" title="Fetch all Woo order data in configured batches and merge it into the local JSON cache">&#8635; Refresh full cache</button>
  <button class="button" type="button" onclick="wbsOpenJsonModal()" title="View the full WooCommerce order responses stored in the local cache">{ } View cached Woo JSON</button>
@@ -340,6 +336,18 @@ if ($resql) {
     </div>
     <div id="wbsSyncList" style="flex:1;overflow-y:auto;padding:4px 20px 12px;font-size:0.9em;"></div>
     <div style="padding:12px 20px;border-top:1px solid #ddd;"><button id="wbsSyncClose" class="button" style="display:none;" onclick="location.reload();">Close and refresh</button> <span id="wbsSyncSummary"></span></div>
+  </div>
+</div>
+
+<div id="wbsDifferenceModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10004;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:84%;max-width:900px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;"><strong>&#8635; Check &amp; update differences</strong></div>
+    <div style="padding:14px 20px 10px;">
+      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;"><div id="wbsDifferenceBar" style="width:0%;height:10px;background:#f0ad4e;transition:width 0.4s ease;"></div></div>
+      <div id="wbsDifferenceStatus" style="margin-top:7px;color:#555;">Preparing&hellip;</div>
+    </div>
+    <div id="wbsDifferenceList" style="flex:1;overflow-y:auto;padding:4px 20px 12px;font-size:0.9em;"></div>
+    <div style="padding:12px 20px;border-top:1px solid #ddd;"><button id="wbsDifferenceClose" class="button" style="display:none;" onclick="location.reload();">Close and refresh</button> <span id="wbsDifferenceSummary"></span></div>
   </div>
 </div>
 
