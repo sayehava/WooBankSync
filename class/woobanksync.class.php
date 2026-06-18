@@ -624,8 +624,7 @@ class WooBankSync
 
     private function extractWooInvoiceNumber($order)
     {
-        // Invoice extraction is needed when either native storage or custom-field storage is enabled.
-        if (!$this->nativeInvoiceReferenceEnabled() && (int) $this->getConst('WBS_BANK_EXTRAFIELD_ENABLED', '0') !== 1) return '';
+        // Always extract — the invoice number goes into the label regardless of storage settings.
 
         $configuredKeys = $this->getJsonConst('WBS_WOO_INVOICE_KEYS_JSON', array());
         $defaultKeys = array(
