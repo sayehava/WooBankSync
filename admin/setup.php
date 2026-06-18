@@ -285,53 +285,26 @@ if (empty($gateways)) {
 </form><br>
 <?php
 
-$invoiceAvailable = !empty($conf->global->WBS_WOO_INVOICE_AVAILABLE);
-$keys = $sync->getJsonConst('WBS_WOO_INVOICE_KEYS_JSON', array());
-$bankExtraFields = $sync->getBankExtraFields();
-$mappedBankExtraField = (string) ($conf->global->WBS_BANK_EXTRAFIELD_CODE ?? '');
+$gzdEnabled = !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED);
+$labelEnabled = !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED);
 ?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
-<input type="hidden" name="action" value="save_docs">
+<input type="hidden" name="action" value="save_invoice">
 <table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">WooCommerce invoice reference</td></tr>
-<?php
-if (empty($keys)) {
-?>
-<tr><td>Detected invoice meta keys</td><td class="opacitymedium">No invoice meta keys detected in scanned orders yet. Click <strong>Refresh</strong> to scan. The sync will always try these known keys automatically: <code>_wc_gzd_invoice_number, _wc_gzd_invoices, _wc_gzd_document_data, _wc_gzdp_invoice_number, _wcpdf_invoice_number, _wpo_wcpdf_invoice_number</code></td></tr>
-<?php
-} else {
-?>
-<tr><td>Detected invoice meta keys</td><td><?php echo dol_escape_htmltag(implode(', ', $keys)); ?></td></tr>
-<?php
-}
-?>
-<tr><td>Enable invoice reference on bank entries</td><td><input type="checkbox" name="WBS_DOCUMENT_SYNC_ENABLED" value="1"<?php echo !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED) ? ' checked' : ''; ?>> Store invoice reference in the native bank entry Number field and label</td></tr>
-<tr><td>Store invoice reference in a custom field</td><td><input type="checkbox" name="WBS_BANK_EXTRAFIELD_ENABLED" value="1"<?php echo !empty($conf->global->WBS_BANK_EXTRAFIELD_ENABLED) ? ' checked' : ''; ?>> Also write the invoice number into the mapped bank-entry custom field</td></tr>
-<tr><td>Bank-entry custom field</td><td><select class="flat minwidth300" name="WBS_BANK_EXTRAFIELD_CODE">
-<option value="">-- not mapped --</option>
-<?php
-foreach ($bankExtraFields as $code => $label) {
-?>
-<option value="<?php echo dol_escape_htmltag($code); ?>"<?php echo $code === $mappedBankExtraField ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($label . ' (' . $code . ')'); ?></option>
-<?php
-}
-?>
-</select><br><span class="opacitymedium">You can create this field manually in Dolibarr bank-entry custom fields, then select it here.</span></td></tr>
-<tr><td>Document folder</td><td><?php echo wbs_ecm_folder_select('WBS_DOCUMENT_FOLDER_ID', $conf->global->WBS_DOCUMENT_FOLDER_ID ?? ''); ?><br><span class="opacitymedium">Optional ECM folder prepared for future/imported WooCommerce PDF invoices. This module currently stores the invoice reference on the bank entry; PDF upload/import needs a WordPress-side download helper.</span></td></tr>
+<tr><td class="titlefield">Germanized Pro integration</td><td>
+<label><input type="checkbox" id="wbsGzdToggle" name="WBS_GERMANIZED_PRO_ENABLED" value="1"<?php echo $gzdEnabled ? ' checked' : ''; ?> onchange="document.getElementById('wbsGzdSub').style.display=this.checked?'table-row-group':'none';">
+ Enable Germanized Pro invoice extraction</label>
+<br><span class="opacitymedium">Reads invoice number from <code>invoices[0].formatted_number</code> in the WooCommerce order response (StoreaBill / Germanized Pro).</span>
+</td></tr></table>
+<table class="noborder centpercent" id="wbsGzdSub" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
+<tr><td class="titlefield">Add invoice number to label</td><td>
+<label><input type="checkbox" name="WBS_DOCUMENT_SYNC_ENABLED" value="1"<?php echo $labelEnabled ? ' checked' : ''; ?>>
+ Append invoice number to bank entry label and set the reference/check number field</label>
+</td></tr>
 </table>
-<div class="center"><input class="button button-save" type="submit" value="Save document settings"></div>
-</form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_invoice_extrafield">
-<input class="button" type="submit" value="Create and map invoice-number custom field"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
-<?php
-if ($mappedBankExtraField !== '') {
-?>
-<br><span class="opacitymedium">A custom field is already mapped. Clear the mapping and save if you need to create a different field.</span>
-<?php
-}
-?>
+<div class="center"><input class="button button-save" type="submit" value="Save invoice settings"></div>
 </form>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="createdocs">
