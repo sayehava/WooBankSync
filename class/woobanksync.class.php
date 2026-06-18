@@ -595,7 +595,7 @@ class WooBankSync
     private function discoverInvoiceKeys($orders)
     {
         $keys = array();
-        $needles = array('invoice', 'rechnung', 'germanized', 'gzd', 'gzdp', 'wcpdf', 'pdf_invoice', 'document_number', 'document_data');
+        $needles = array('invoice', 'rechnung', 'germanized', '_wc_gzd', '_wc_gzdp', 'wcpdf', 'pdf_invoice', 'document_number');
         foreach ($orders as $order) {
             foreach (($order['meta_data'] ?? array()) as $meta) {
                 $key = (string) ($meta['key'] ?? '');
