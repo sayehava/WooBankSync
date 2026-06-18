@@ -382,9 +382,10 @@ class WooBankSync
         return $stats;
     }
 
-    private function applyOrderUpdate($logRow, $order, $newInvoiceNumber, $newBuyerName, $newGross, $newFee)
+    private function applyOrderUpdate($logRow, $order, $newInvoiceNumber, $newBuyerName, $newGross, $newFee, $newPdfUrl = '')
     {
         $orderNumber = (string) $logRow->woo_order_number;
+        $orderId = (string) $logRow->woo_order_id;
         $dateOrder = (string) ($logRow->date_order ?? '');
 
         $showInvoice = $this->nativeInvoiceReferenceEnabled();
@@ -414,10 +415,19 @@ class WooBankSync
             if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
         }
 
+        $oldEcmPath = (string) ($logRow->pdf_ecm_filepath ?? '');
+        $pdfEcmFilepath = $oldEcmPath;
+        if ((int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1 && $newPdfUrl !== '' && $oldEcmPath === '') {
+            $downloaded = $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl);
+            if ($downloaded !== '') $pdfEcmFilepath = $downloaded;
+        }
+
         $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'woobanksync_log SET'
             . " woo_invoice_number='" . $this->db->escape($newInvoiceNumber) . "'"
             . ', gross_amount=' . price2num($newGross, 'MT')
             . ', fee_amount=' . price2num($newFee, 'MT')
+            . ", woo_invoice_pdf_url='" . $this->db->escape($newPdfUrl) . "'"
+            . ", pdf_ecm_filepath='" . $this->db->escape($pdfEcmFilepath) . "'"
             . ", sync_status='synced'"
             . ", sync_message='Updated from WooCommerce on " . $this->db->escape(dol_print_date(dol_now(), '%Y-%m-%d %H:%M:%S')) . "'"
             . ' WHERE rowid=' . (int) $logRow->rowid;
