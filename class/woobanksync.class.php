@@ -1194,7 +1194,8 @@ class WooBankSync
     public function refreshFullCacheBatch(array $orderIds)
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
-        $ids = array_slice($ids, 0, 10);
+        $batchSize = max(1, min(100, (int) $this->getConst('WBS_CACHE_BATCH_SIZE', '1')));
+        $ids = array_slice($ids, 0, $batchSize);
         if (empty($ids)) return array('updated' => 0, 'errors' => 0, 'items' => array());
 
         $client = $this->client();
