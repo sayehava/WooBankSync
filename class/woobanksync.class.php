@@ -373,10 +373,11 @@ class WooBankSync
         $orderNumber = (string) $logRow->woo_order_number;
         $dateOrder = (string) ($logRow->date_order ?? '');
 
+        $showInvoice = $this->nativeInvoiceReferenceEnabled();
         $labelBase = 'WOO - #' . $orderNumber;
         if (!empty($newBuyerName)) $labelBase .= ' ' . $newBuyerName;
-        if (!empty($newInvoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($newInvoiceNumber);
-        $bankReference = !empty($newInvoiceNumber) ? $newInvoiceNumber : $orderNumber;
+        if ($showInvoice && !empty($newInvoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($newInvoiceNumber);
+        $bankReference = ($showInvoice && !empty($newInvoiceNumber)) ? $newInvoiceNumber : $orderNumber;
 
         $this->db->begin();
 
