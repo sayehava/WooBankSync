@@ -89,7 +89,7 @@ function wbs_ecm_folder_select($name, $selected)
 }
 
 if ($action === 'save_api') {
-    $keys = array('WBS_WOO_URL', 'WBS_WOO_CONSUMER_KEY', 'WBS_WOO_CONSUMER_SECRET', 'WBS_SYNC_FROM_DATE', 'WBS_ORDER_STATUSES', 'WBS_MANUAL_SYNC_PAGES', 'WBS_MANUAL_SYNC_PER_PAGE');
+    $keys = array('WBS_WOO_URL', 'WBS_WOO_CONSUMER_KEY', 'WBS_WOO_CONSUMER_SECRET', 'WBS_SYNC_FROM_DATE', 'WBS_ORDER_STATUSES', 'WBS_MANUAL_SYNC_PAGES');
     foreach ($keys as $key) wbs_set_const_safe($db, $key, GETPOST($key, 'restricthtml'), 'chaine', 0, '', $conf->entity);
     wbs_set_const_safe($db, 'WBS_DRY_RUN', GETPOST('WBS_DRY_RUN', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
     setEventMessages('API settings saved.', null, 'mesgs');
@@ -232,15 +232,13 @@ $fields = array(
     'WBS_WOO_CONSUMER_SECRET' => 'Consumer secret',
     'WBS_SYNC_FROM_DATE' => 'Sync from date (YYYY-MM-DD)',
     'WBS_ORDER_STATUSES' => 'Order statuses',
-    'WBS_MANUAL_SYNC_PAGES' => 'Manual sync pages per click',
-    'WBS_MANUAL_SYNC_PER_PAGE' => 'Orders per page',
+    'WBS_MANUAL_SYNC_PAGES' => 'Maximum sync batches per run',
 );
 foreach ($fields as $key => $label) {
     $type = ($key === 'WBS_WOO_CONSUMER_SECRET') ? 'password' : 'text';
     $defaultValue = '';
     if ($key === 'WBS_ORDER_STATUSES') $defaultValue = 'processing,completed';
     if ($key === 'WBS_MANUAL_SYNC_PAGES') $defaultValue = '5';
-    if ($key === 'WBS_MANUAL_SYNC_PER_PAGE') $defaultValue = '20';
     $value = isset($conf->global->$key) ? $conf->global->$key : $defaultValue;
 ?>
 <tr><td class="titlefield"><?php echo dol_escape_htmltag($label); ?></td><td><input class="flat minwidth500" type="<?php echo $type; ?>" name="<?php echo $key; ?>" value="<?php echo dol_escape_htmltag($value); ?>"></td></tr>
