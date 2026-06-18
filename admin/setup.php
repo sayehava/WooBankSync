@@ -95,6 +95,20 @@ if ($action === 'save_api') {
     setEventMessages('API settings saved.', null, 'mesgs');
 }
 
+if ($action === 'save_batch_sizes') {
+    $defaults = array(
+        'WBS_CACHE_BATCH_SIZE' => 1,
+        'WBS_SYNC_BATCH_SIZE' => 10,
+        'WBS_DIFF_BATCH_SIZE' => 10,
+    );
+    foreach ($defaults as $key => $default) {
+        $value = max(1, min(100, (int) GETPOST($key, 'int')));
+        if ($value <= 0) $value = $default;
+        wbs_set_const_safe($db, $key, (string) $value, 'chaine', 0, '', $conf->entity);
+    }
+    setEventMessages('Batch size settings saved.', null, 'mesgs');
+}
+
 if ($action === 'refresh') {
     list($ok, $msg) = $sync->refreshWooDiscovery();
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
