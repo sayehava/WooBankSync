@@ -106,6 +106,28 @@ class WbsGermanizedClient
         return false;
     }
 
+    public function getOrderDocumentData($orderId)
+    {
+        $docs = $this->getOrderDocuments($orderId);
+        if ($docs === false) {
+            return array(
+                'documents' => array(),
+                'endpoint' => '',
+                'invoice_number' => '',
+                'invoice_pdf_url' => '',
+                'error' => $this->error,
+            );
+        }
+
+        return array(
+            'documents' => $docs,
+            'endpoint' => $this->lastDocumentEndpoint,
+            'invoice_number' => $this->pickInvoiceField($docs, array('formatted_number', 'number', 'document_number', 'invoice_number')),
+            'invoice_pdf_url' => $this->pickInvoiceField($docs, array('download_url', 'file_url', 'file', 'pdf_url', 'url')),
+            'error' => '',
+        );
+    }
+
     /**
      * Fetch the full single-order response.
      * The list endpoint (/orders) may omit Germanized additions; the single-order

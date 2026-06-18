@@ -1172,6 +1172,125 @@ class WooBankSync
         return (string) $obj->raw_order_json;
     }
 
+    public function getFullCacheRefreshOrders()
+    {
+        $rows = array();
+        $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+            . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND sync_status='synced' ORDER BY rowid DESC";
+        $resql = $this->db->query($sql);
+        if (!$resql) return $rows;
+        while ($obj = $this->db->fetch_object($resql)) {
+            $rows[] = array(
+                'id' => (string) $obj->woo_order_id,
+                'number' => (string) $obj->woo_order_number,
+            );
+        }
+        return $rows;
+    }
+
+    public function refreshFullCacheBatch(array $orderIds)
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
+        $ids = array_slice($ids, 0, 10);
+        if (empty($ids)) return array('updated' => 0, 'errors' => 0, 'items' => array());
+
+        $client = $this->client();
+        $orders = $client->getOrdersByIds($ids);
+        if ($orders === false) {
+            return array('updated' => 0, 'errors' => count($ids), 'items' => array(), 'error' => $client->error);
+        }
+
+        $ordersById = array();
+        foreach ($orders as $order) {
+            if (!empty($order['id'])) $ordersById[(string) $order['id']] = $order;
+        }
+
+        $germanizedEnabled = (int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') === 1;
+        $gzd = null;
+        if ($germanizedEnabled) {
+            $gzd = new WbsGermanizedClient(
+                (string) $this->getConst('WBS_WOO_URL', ''),
+                (string) $this->getConst('WBS_WOO_CONSUMER_KEY', ''),
+                (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '')
+            );
+        }
+
+        $result = array('updated' => 0, 'errors' => 0, 'items' => array());
+        foreach ($ids as $id) {
+            $key = (string) $id;
+            if (empty($ordersById[$key])) {
+                $result['errors']++;
+                $result['items'][] = array('id' => $key, 'ok' => false, 'message' => 'Order not returned by WooCommerce');
+                continue;
+            }
+
+            $order = $ordersById[$key];
+            $existing = $this->getCachedOrderJson($key);
+            $merged = array();
+            if ($existing !== null) {
+                $decoded = json_decode($existing, true);
+                if (is_array($decoded)) $merged = $decoded;
+            }
+            foreach ($order as $field => $value) {
+                $merged[$field] = $value;
+            }
+
+            $cacheMeta = !empty($merged['_woobanksync_cache']) && is_array($merged['_woobanksync_cache'])
+                ? $merged['_woobanksync_cache']
+                : array();
+            $cacheMeta['refreshed_at'] = dol_print_date(dol_now(), '%Y-%m-%d %H:%M:%S');
+            $cacheMeta['germanized_enabled'] = $germanizedEnabled;
+
+            $invoiceNumber = $this->extractWooInvoiceNumber($order);
+            $pdfUrl = $this->extractWooInvoicePdfUrlFromOrder($order);
+            if ($germanizedEnabled && $gzd !== null) {
+                $gzdData = $gzd->getOrderDocumentData($id);
+                $cacheMeta['germanized'] = $gzdData;
+                if (!empty($gzdData['invoice_number'])) $invoiceNumber = (string) $gzdData['invoice_number'];
+                if (!empty($gzdData['invoice_pdf_url'])) $pdfUrl = (string) $gzdData['invoice_pdf_url'];
+            } else {
+                unset($cacheMeta['germanized']);
+            }
+            $merged['_woobanksync_cache'] = $cacheMeta;
+
+            $cacheRow = $this->getOrderCacheState($key);
+            if ($invoiceNumber === '') $invoiceNumber = (string) ($cacheRow['invoice_number'] ?? '');
+            if ($pdfUrl === '') $pdfUrl = (string) ($cacheRow['pdf_url'] ?? '');
+            $orderNumber = (string) ($order['number'] ?? ($cacheRow['order_number'] ?? $key));
+            $ecmFilepath = (string) ($cacheRow['ecm_filepath'] ?? '');
+            $this->upsertOrderCache($key, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath, $merged);
+
+            $result['updated']++;
+            $result['items'][] = array(
+                'id' => $key,
+                'number' => $orderNumber,
+                'ok' => true,
+                'germanized' => $germanizedEnabled,
+            );
+        }
+        return $result;
+    }
+
+    private function getOrderCacheState($orderId)
+    {
+        $state = array();
+        $sql = 'SELECT woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath'
+            . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
+            . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND woo_order_id='" . $this->db->escape((string) $orderId) . "' LIMIT 1";
+        $resql = $this->db->query($sql);
+        if ($resql && ($obj = $this->db->fetch_object($resql))) {
+            $state = array(
+                'order_number' => (string) $obj->woo_order_number,
+                'invoice_number' => (string) ($obj->woo_invoice_number ?? ''),
+                'pdf_url' => (string) ($obj->woo_invoice_pdf_url ?? ''),
+                'ecm_filepath' => (string) ($obj->pdf_ecm_filepath ?? ''),
+            );
+        }
+        return $state;
+    }
+
     private function upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath, $order = null)
     {
         $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
