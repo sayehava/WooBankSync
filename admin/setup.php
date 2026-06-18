@@ -312,7 +312,7 @@ $bankExtraFields = $sync->getBankExtraFields();
 <table class="noborder centpercent" id="wbsGzdSub" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
 <tr><td class="titlefield">Add invoice number to label</td><td>
 <label><input type="checkbox" name="WBS_DOCUMENT_SYNC_ENABLED" value="1"<?php echo $labelEnabled ? ' checked' : ''; ?>>
- Append invoice number to bank entry label and set the reference/check number field</label>
+ Append invoice number to bank entry label (title)</label>
 </td></tr>
 <tr><td class="titlefield">Store in a custom field</td><td>
 <label><input type="checkbox" name="WBS_BANK_EXTRAFIELD_ENABLED" value="1"<?php echo $extraEnabled ? ' checked' : ''; ?>>
