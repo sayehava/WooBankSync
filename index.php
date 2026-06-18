@@ -82,6 +82,25 @@ if ($action === 'full_cache_refresh_batch') {
     exit;
 }
 
+// ── AJAX: synchronize one configured page of WooCommerce orders ──
+if ($action === 'sync_batch') {
+    header('Content-Type: application/json');
+    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
+        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
+    }
+    $page = max(1, (int) GETPOST('page', 'int'));
+    $batchSize = max(1, min(100, (int) ($conf->global->WBS_SYNC_BATCH_SIZE ?? 10)));
+    @set_time_limit(300);
+    $sync = new WooBankSync($db, $conf, $langs);
+    echo json_encode(array(
+        'ok' => true,
+        'page' => $page,
+        'batch_size' => $batchSize,
+        'result' => $sync->syncBatch($page, $batchSize),
+    ));
+    exit;
+}
+
 // ── AJAX: download one PDF by order ID from the local cache (no API call) ──
 if ($action === 'download_pdf_single') {
     header('Content-Type: application/json');
