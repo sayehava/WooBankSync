@@ -253,7 +253,7 @@ $mappedBankExtraField = (string) ($conf->global->WBS_BANK_EXTRAFIELD_CODE ?? '')
 <?php
 if (empty($keys)) {
 ?>
-<tr><td>Detected invoice meta keys</td><td class="opacitymedium">No explicit invoice meta key detected yet. You can still enable invoice references; the sync will try known Germanized/PDF invoice keys and fall back gracefully.</td></tr>
+<tr><td>Detected invoice meta keys</td><td class="opacitymedium">No invoice meta keys detected in scanned orders yet. Click <strong>Refresh</strong> to scan. The sync will always try these known keys automatically: <code>_wc_gzd_invoice_number, _wc_gzd_invoices, _wc_gzd_document_data, _wc_gzdp_invoice_number, _wcpdf_invoice_number, _wpo_wcpdf_invoice_number</code></td></tr>
 <?php
 } else {
 ?>
