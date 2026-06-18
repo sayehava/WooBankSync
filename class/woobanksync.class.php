@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/woocommerceclient.class.php';
+require_once __DIR__ . '/wbsgermanizedclient.class.php';
 
 class WooBankSync
 {
