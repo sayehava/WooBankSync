@@ -65,7 +65,6 @@ class WooBankSync
         $invoiceNumber = $this->extractWooInvoiceNumber($order);
         $pdfUrl = $this->extractWooInvoicePdfUrl($order);
         $orderStatus = isset($order['status']) ? (string) $order['status'] : '';
-        $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, '', $order);
 
         if ($this->isOrderSynced($orderId)) {
             return array('status' => 'skipped', 'message' => 'Skipped Woo order #' . $orderNumber . ': already synced.');
