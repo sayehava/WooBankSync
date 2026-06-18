@@ -1129,7 +1129,7 @@ class WooBankSync
         $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
         if (!in_array('raw_order_json', $this->getTableColumns($table), true)) return $rows;
 
-        $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, raw_order_json, date_updated'
+        $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, date_updated'
             . ' FROM ' . $table
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND raw_order_json IS NOT NULL AND raw_order_json != ''"
@@ -1143,10 +1143,23 @@ class WooBankSync
                 'number' => (string) $obj->woo_order_number,
                 'invoice' => (string) ($obj->woo_invoice_number ?? ''),
                 'date_updated' => (string) ($obj->date_updated ?? ''),
-                'json' => (string) $obj->raw_order_json,
             );
         }
         return $rows;
+    }
+
+    public function getCachedOrderJson($orderId)
+    {
+        $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        if (!in_array('raw_order_json', $this->getTableColumns($table), true)) return null;
+
+        $sql = 'SELECT raw_order_json FROM ' . $table
+            . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND woo_order_id='" . $this->db->escape((string) $orderId) . "'"
+            . " AND raw_order_json IS NOT NULL AND raw_order_json != '' LIMIT 1";
+        $resql = $this->db->query($sql);
+        if (!$resql || !($obj = $this->db->fetch_object($resql))) return null;
+        return (string) $obj->raw_order_json;
     }
 
     private function upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath, $order = null)

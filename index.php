@@ -30,6 +30,25 @@ if ($action === 'cached_order_json') {
     exit;
 }
 
+// ── AJAX: return one cached WooCommerce order JSON record ──
+if ($action === 'cached_order_json_item') {
+    header('Content-Type: application/json');
+    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
+        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
+    }
+    $wooOrderId = GETPOST('woo_order_id', 'alphanohtml');
+    if ($wooOrderId === '') {
+        echo json_encode(array('ok' => false, 'error' => 'Missing order ID')); exit;
+    }
+    $sync = new WooBankSync($db, $conf, $langs);
+    $rawJson = $sync->getCachedOrderJson($wooOrderId);
+    if ($rawJson === null) {
+        echo json_encode(array('ok' => false, 'error' => 'Cached JSON not found')); exit;
+    }
+    echo json_encode(array('ok' => true, 'json' => $rawJson));
+    exit;
+}
+
 // ── AJAX: download one PDF by order ID from the local cache (no API call) ──
 if ($action === 'download_pdf_single') {
     header('Content-Type: application/json');
@@ -229,8 +248,6 @@ if ($resql) {
 <script>
 var _wbsAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
 var _wbsToken   = <?php echo json_encode(newToken()); ?>;
-var _wbsCachedOrders = [];
-
 function wbsOpenJsonModal() {
     var modal = document.getElementById('wbsJsonModal');
     var select = document.getElementById('wbsJsonOrder');
@@ -244,21 +261,21 @@ function wbsOpenJsonModal() {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (!data.ok) throw new Error(data.error || 'Could not read cache');
-            _wbsCachedOrders = data.orders || [];
-            if (_wbsCachedOrders.length === 0) {
+            var orders = data.orders || [];
+            if (orders.length === 0) {
                 document.getElementById('wbsJsonStatus').textContent = 'No full order JSON is cached yet.';
                 document.getElementById('wbsJsonContent').textContent = 'Run/update database checks in Setup, then run Sync now or Check & update differences to populate the JSON cache.';
                 return;
             }
-            _wbsCachedOrders.forEach(function(order, index) {
+            orders.forEach(function(order) {
                 var option = document.createElement('option');
-                option.value = String(index);
+                option.value = order.id;
                 option.textContent = '#' + order.number + (order.invoice ? ' — ' + order.invoice : '') + (order.date_updated ? ' — ' + order.date_updated : '');
                 select.appendChild(option);
             });
             select.disabled = false;
-            document.getElementById('wbsJsonStatus').textContent = _wbsCachedOrders.length + ' cached orders';
-            wbsShowCachedJson('0');
+            document.getElementById('wbsJsonStatus').textContent = orders.length + ' cached orders';
+            wbsShowCachedJson(select.value);
         })
         .catch(function(error) {
             document.getElementById('wbsJsonStatus').textContent = 'Error';
@@ -266,16 +283,24 @@ function wbsOpenJsonModal() {
         });
 }
 
-function wbsShowCachedJson(index) {
-    var order = _wbsCachedOrders[parseInt(index, 10)];
-    if (!order) return;
-    var output = order.json || '';
-    try {
-        output = JSON.stringify(JSON.parse(output), null, 2);
-    } catch (e) {
-        // Keep the stored value visible even if it is not valid JSON.
-    }
-    document.getElementById('wbsJsonContent').textContent = output;
+function wbsShowCachedJson(orderId) {
+    if (!orderId) return;
+    document.getElementById('wbsJsonContent').textContent = 'Loading order JSON…';
+    fetch(_wbsAjaxUrl + '?action=cached_order_json_item&woo_order_id=' + encodeURIComponent(orderId) + '&token=' + encodeURIComponent(_wbsToken))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok) throw new Error(data.error || 'Could not read cached JSON');
+            var output = data.json || '';
+            try {
+                output = JSON.stringify(JSON.parse(output), null, 2);
+            } catch (e) {
+                // Keep the stored value visible even if it is not valid JSON.
+            }
+            document.getElementById('wbsJsonContent').textContent = output;
+        })
+        .catch(function(error) {
+            document.getElementById('wbsJsonContent').textContent = error.message;
+        });
 }
 
 function wbsOpenPdfModal() {
