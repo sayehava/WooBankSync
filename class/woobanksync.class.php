@@ -891,6 +891,20 @@ class WooBankSync
         return '';
     }
 
+    private function extractWooInvoicePdfUrl($order)
+    {
+        if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
+        if (!empty($order['invoices']) && is_array($order['invoices'])) {
+            foreach ($order['invoices'] as $invoice) {
+                if (!empty($invoice['download_url'])) return (string) $invoice['download_url'];
+                if (!empty($invoice['file_url'])) return (string) $invoice['file_url'];
+                if (!empty($invoice['pdf_url'])) return (string) $invoice['pdf_url'];
+                if (!empty($invoice['url'])) return (string) $invoice['url'];
+            }
+        }
+        return '';
+    }
+
     private function formatInvoiceReferenceForLabel($invoiceNumber)
     {
         $invoiceNumber = trim((string) $invoiceNumber);
