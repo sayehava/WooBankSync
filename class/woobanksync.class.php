@@ -998,6 +998,87 @@ class WooBankSync
         return (bool) $this->db->query($sql);
     }
 
+    private function downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl)
+    {
+        if (empty($pdfUrl)) return '';
+        $folderId = (int) $this->getConst('WBS_DOCUMENT_FOLDER_ID', '0');
+        if ($folderId <= 0) return '';
+
+        $sql = 'SELECT relpath, fullpath, filepath FROM ' . MAIN_DB_PREFIX . 'ecm_directories WHERE rowid=' . $folderId . ' AND entity=' . (int) $this->conf->entity;
+        $resql = $this->db->query($sql);
+        if (!$resql || !($obj = $this->db->fetch_object($resql))) return '';
+        $relpath = trim((string) (!empty($obj->relpath) ? $obj->relpath : (!empty($obj->fullpath) ? $obj->fullpath : $obj->filepath)), '/');
+        if ($relpath === '') return '';
+
+        $base = !empty($this->conf->ecm->dir_output) ? rtrim($this->conf->ecm->dir_output, '/\\') : (defined('DOL_DATA_ROOT') ? DOL_DATA_ROOT . '/ecm' : '');
+        if ($base === '') return '';
+
+        $dir = $base . '/' . $relpath;
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) return '';
+
+        $safe = static function ($s) { return preg_replace('/[^a-zA-Z0-9\-_]/', '-', trim((string) $s)); };
+        $filename = 'woo-' . $safe($orderNumber) . ($invoiceNumber !== '' ? '-' . $safe($invoiceNumber) : '') . '.pdf';
+        $filepath = $dir . '/' . $filename;
+        $ecmRelPath = $relpath . '/' . $filename;
+
+        if (!file_exists($filepath)) {
+            $content = $this->fetchPdfContent($pdfUrl);
+            if ($content === false || strlen($content) < 64) return '';
+            if (file_put_contents($filepath, $content) === false) return '';
+        }
+
+        $this->registerEcmFile($folderId, $filename, $ecmRelPath, $orderId, $invoiceNumber);
+        return $ecmRelPath;
+    }
+
+    private function fetchPdfContent($url)
+    {
+        $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Dolibarr WooBankSync/1.1');
+        if ($key !== '' && $secret !== '') {
+            curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+            curl_setopt($ch, CURLOPT_USERPWD, $key . ':' . $secret);
+        }
+        $body = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        curl_close($ch);
+        if ($httpCode < 200 || $httpCode >= 300 || empty($body)) return false;
+        if (substr($body, 0, 4) !== '%PDF' && stripos($contentType, 'pdf') === false) return false;
+        return $body;
+    }
+
+    private function registerEcmFile($folderId, $filename, $relPath, $orderId, $invoiceNumber)
+    {
+        $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'ecm_files');
+        if (empty($fields)) return;
+        $label = pathinfo($filename, PATHINFO_FILENAME);
+        $data = array();
+        $this->addDataIfColumn($data, $fields, 'label', "'" . $this->db->escape($label) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'filename', "'" . $this->db->escape($filename) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'filepath', "'" . $this->db->escape($relPath) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'fullpath_orig', "'" . $this->db->escape($relPath) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'fk_parent', (int) $folderId, true);
+        $this->addDataIfColumn($data, $fields, 'entity', (int) $this->conf->entity, true);
+        $this->addDataIfColumn($data, $fields, 'fk_user_c', isset($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : 0, true);
+        $this->addDataIfColumn($data, $fields, 'date_c', $this->sqlDateNow(), false);
+        $this->addDataIfColumn($data, $fields, 'note', "'" . $this->db->escape('WooBankSync order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('woobanksync woo ' . $orderId) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'status', 1, true);
+        $this->addDataIfColumn($data, $fields, 'position', 0, true);
+        if (empty($data)) return;
+        $sql = 'INSERT IGNORE INTO ' . MAIN_DB_PREFIX . 'ecm_files (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        $this->db->query($sql);
+    }
+
     private function findOrCreateEcmFolder($label)
     {
         $table = MAIN_DB_PREFIX . 'ecm_directories';
