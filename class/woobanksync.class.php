@@ -310,12 +310,32 @@ class WooBankSync
     }
 
 
-    public function resyncDifferences()
+    public function getDifferenceCheckOrders()
     {
-        $stats = array('checked' => 0, 'updated' => 0, 'unchanged' => 0, 'errors' => 0, 'messages' => array());
+        $rows = array();
+        $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+            . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND sync_status='synced' ORDER BY rowid DESC";
+        $resql = $this->db->query($sql);
+        if ($resql) {
+            while ($obj = $this->db->fetch_object($resql)) {
+                $rows[] = array('id' => (string) $obj->woo_order_id, 'number' => (string) $obj->woo_order_number);
+            }
+        }
+        return $rows;
+    }
+
+    public function resyncDifferences(array $orderIds = array())
+    {
+        $stats = array('checked' => 0, 'updated' => 0, 'unchanged' => 0, 'errors' => 0, 'messages' => array(), 'items' => array());
         $table = MAIN_DB_PREFIX . 'woobanksync_log';
 
         $sql = 'SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity . " AND sync_status='synced' ORDER BY rowid DESC";
+        if (!empty($orderIds)) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
+            $sql = 'SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity
+                . " AND sync_status='synced' AND woo_order_id IN (" . implode(',', $ids) . ') ORDER BY rowid DESC';
+        }
         $resql = $this->db->query($sql);
         if (!$resql) {
             $stats['errors']++;
@@ -360,6 +380,7 @@ class WooBankSync
                 if (empty($orderById[$orderId])) {
                     $stats['errors']++;
                     $stats['messages'][] = 'Order #' . $logRow->woo_order_number . ' not found in WooCommerce.';
+                    $stats['items'][] = array('id' => $orderId, 'number' => (string) $logRow->woo_order_number, 'status' => 'error');
                     continue;
                 }
 
@@ -394,6 +415,7 @@ class WooBankSync
 
                 if (!$invoiceDiff && !$grossDiff && !$feeDiff && !$pdfMissing && !$pdfUrlChanged) {
                     $stats['unchanged']++;
+                    $stats['items'][] = array('id' => $orderId, 'number' => (string) $logRow->woo_order_number, 'status' => 'unchanged');
                     continue;
                 }
 
@@ -408,9 +430,11 @@ class WooBankSync
                 if ($ok) {
                     $stats['updated']++;
                     $stats['messages'][] = 'Updated #' . $logRow->woo_order_number . ': ' . implode(', ', $changed);
+                    $stats['items'][] = array('id' => $orderId, 'number' => (string) $logRow->woo_order_number, 'status' => 'updated', 'changes' => implode(', ', $changed));
                 } else {
                     $stats['errors']++;
                     $stats['messages'][] = 'Failed to update #' . $logRow->woo_order_number . ': ' . $this->db->lasterror();
+                    $stats['items'][] = array('id' => $orderId, 'number' => (string) $logRow->woo_order_number, 'status' => 'error');
                 }
             }
         }
