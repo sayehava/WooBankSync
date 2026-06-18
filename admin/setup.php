@@ -294,6 +294,7 @@ if (empty($gateways)) {
 $gzdEnabled = !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED);
 $labelEnabled = !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED);
 $extraEnabled = !empty($conf->global->WBS_BANK_EXTRAFIELD_ENABLED);
+$pdfDownloadEnabled = !empty($conf->global->WBS_PDF_DOWNLOAD_ENABLED);
 $mappedBankExtraField = (string) ($conf->global->WBS_BANK_EXTRAFIELD_CODE ?? '');
 $mappedFolderId = (string) ($conf->global->WBS_DOCUMENT_FOLDER_ID ?? '');
 $bankExtraFields = $sync->getBankExtraFields();
@@ -328,6 +329,11 @@ foreach ($bankExtraFields as $code => $fieldLabel) {
 ?>
 </select>
 <br><span class="opacitymedium">Select an existing Dolibarr bank-entry custom field, or use the button below to create and map one automatically.</span>
+</td></tr>
+<tr><td class="titlefield">Download PDF invoices during sync</td><td>
+<label><input type="checkbox" name="WBS_PDF_DOWNLOAD_ENABLED" value="1"<?php echo $pdfDownloadEnabled ? ' checked' : ''; ?>>
+ Automatically download and save invoice PDFs to the mapped Dolibarr folder during sync</label>
+<br><span class="opacitymedium">Requires a mapped folder below. Each synced order will trigger one extra HTTP request to fetch the PDF. A clickable download link will appear in the sync log.</span>
 </td></tr>
 <tr><td class="titlefield">Invoice PDF document folder</td><td>
 <?php echo wbs_ecm_folder_select('WBS_DOCUMENT_FOLDER_ID', $mappedFolderId); ?>
