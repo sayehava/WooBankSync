@@ -65,6 +65,7 @@ class WooBankSync
         $invoiceNumber = $this->extractWooInvoiceNumber($order);
         $pdfUrl = $this->extractWooInvoicePdfUrl($order);
         $orderStatus = isset($order['status']) ? (string) $order['status'] : '';
+        $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, '', $order);
 
         if ($this->isOrderSynced($orderId)) {
             return array('status' => 'skipped', 'message' => 'Skipped Woo order #' . $orderNumber . ': already synced.');
@@ -154,7 +155,7 @@ class WooBankSync
         $status = $dryRun ? 'dryrun' : 'synced';
         $message = ($dryRun ? '[DRY RUN] ' : '') . 'Synced Woo order #' . $orderNumber . ' gross=' . price($gross) . ' fee=' . price($fee) . ' payout=' . price($payout) . ' gateway=' . $paymentMethod . ($mappedPaymentMethod !== $paymentMethod ? ' mapped_to=' . $mappedPaymentMethod : '');
         $this->insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath);
-        $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $pdfEcmFilepath);
+        $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $pdfEcmFilepath, $order);
         $this->db->commit();
 
         return array('status' => 'imported', 'message' => $message);
@@ -359,7 +360,7 @@ class WooBankSync
                 $pdfUrlChanged = $newPdfUrl !== $oldPdfUrl;
 
                 // Always populate cache so the "Download past PDFs" button has data for every order.
-                $this->upsertOrderCache($orderId, (string) $logRow->woo_order_number, $newInvoiceNumber, $newPdfUrl, $oldEcmPath);
+                $this->upsertOrderCache($orderId, (string) $logRow->woo_order_number, $newInvoiceNumber, $newPdfUrl, $oldEcmPath, $order);
 
                 if (!$invoiceDiff && !$grossDiff && !$feeDiff && !$pdfMissing && !$pdfUrlChanged) {
                     $stats['unchanged']++;
@@ -435,7 +436,7 @@ class WooBankSync
         if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
 
         $this->db->commit();
-        $this->upsertOrderCache($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl, $pdfEcmFilepath);
+        $this->upsertOrderCache($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl, $pdfEcmFilepath, $order);
         return true;
     }
 
@@ -612,6 +613,7 @@ class WooBankSync
             "woo_invoice_number varchar(255) DEFAULT NULL," .
             "woo_invoice_pdf_url varchar(500) DEFAULT NULL," .
             "pdf_ecm_filepath varchar(500) DEFAULT NULL," .
+            "raw_order_json longtext DEFAULT NULL," .
             "date_updated datetime DEFAULT NULL," .
             "UNIQUE KEY uk_wbs_order_cache (entity, woo_order_id)" .
             ") ENGINE=innodb";
@@ -619,6 +621,14 @@ class WooBankSync
             return array(false, 'Database check failed while creating order cache table: ' . $this->db->lasterror());
         }
         $messages[] = 'Order cache table is ready.';
+
+        $resql = $this->db->query("SHOW COLUMNS FROM " . $cacheTable . " LIKE 'raw_order_json'");
+        if ($resql && $this->db->num_rows($resql) == 0) {
+            if (!$this->db->query("ALTER TABLE " . $cacheTable . " ADD COLUMN raw_order_json longtext DEFAULT NULL AFTER pdf_ecm_filepath")) {
+                return array(false, 'Database check failed while adding raw_order_json: ' . $this->db->lasterror());
+            }
+            $messages[] = 'Added full WooCommerce order JSON cache.';
+        }
 
         return array(true, implode(' ', $messages));
     }
@@ -1114,15 +1124,69 @@ class WooBankSync
         return $rows;
     }
 
-    private function upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath)
+    public function getCachedOrderJsonRows()
+    {
+        $rows = array();
+        $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        if (!in_array('raw_order_json', $this->getTableColumns($table), true)) return $rows;
+
+        $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, raw_order_json, date_updated'
+            . ' FROM ' . $table
+            . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND raw_order_json IS NOT NULL AND raw_order_json != ''"
+            . ' ORDER BY rowid DESC';
+        $resql = $this->db->query($sql);
+        if (!$resql) return $rows;
+
+        while ($obj = $this->db->fetch_object($resql)) {
+            $rows[] = array(
+                'id' => (string) $obj->woo_order_id,
+                'number' => (string) $obj->woo_order_number,
+                'invoice' => (string) ($obj->woo_invoice_number ?? ''),
+                'date_updated' => (string) ($obj->date_updated ?? ''),
+                'json' => (string) $obj->raw_order_json,
+            );
+        }
+        return $rows;
+    }
+
+    private function upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath, $order = null)
     {
         $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
-        if (empty($this->getTableColumns($table))) return;
+        $columns = $this->getTableColumns($table);
+        if (empty($columns)) return;
         $e = (int) $this->conf->entity;
         $now = $this->sqlDateNow();
-        $sql = "INSERT INTO " . $table . " (entity,woo_order_id,woo_order_number,woo_invoice_number,woo_invoice_pdf_url,pdf_ecm_filepath,date_updated)"
-            . " VALUES (" . $e . ",'" . $this->db->escape($orderId) . "','" . $this->db->escape($orderNumber) . "','" . $this->db->escape($invoiceNumber) . "','" . $this->db->escape($pdfUrl) . "','" . $this->db->escape($ecmFilepath) . "'," . $now . ")"
-            . " ON DUPLICATE KEY UPDATE woo_order_number=VALUES(woo_order_number),woo_invoice_number=VALUES(woo_invoice_number),woo_invoice_pdf_url=VALUES(woo_invoice_pdf_url),pdf_ecm_filepath=IF(VALUES(pdf_ecm_filepath)!='',VALUES(pdf_ecm_filepath),pdf_ecm_filepath),date_updated=VALUES(date_updated)";
+        $fields = array('entity', 'woo_order_id', 'woo_order_number', 'woo_invoice_number', 'woo_invoice_pdf_url', 'pdf_ecm_filepath');
+        $values = array(
+            (string) $e,
+            "'" . $this->db->escape($orderId) . "'",
+            "'" . $this->db->escape($orderNumber) . "'",
+            "'" . $this->db->escape($invoiceNumber) . "'",
+            "'" . $this->db->escape($pdfUrl) . "'",
+            "'" . $this->db->escape($ecmFilepath) . "'",
+        );
+        $updates = array(
+            'woo_order_number=VALUES(woo_order_number)',
+            'woo_invoice_number=VALUES(woo_invoice_number)',
+            'woo_invoice_pdf_url=VALUES(woo_invoice_pdf_url)',
+            "pdf_ecm_filepath=IF(VALUES(pdf_ecm_filepath)!='',VALUES(pdf_ecm_filepath),pdf_ecm_filepath)",
+        );
+
+        if (in_array('raw_order_json', $columns, true)) {
+            $rawJson = is_array($order) ? json_encode($order, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : '';
+            if ($rawJson === false) $rawJson = '';
+            $fields[] = 'raw_order_json';
+            $values[] = "'" . $this->db->escape($rawJson) . "'";
+            $updates[] = "raw_order_json=IF(VALUES(raw_order_json)!='',VALUES(raw_order_json),raw_order_json)";
+        }
+
+        $fields[] = 'date_updated';
+        $values[] = $now;
+        $updates[] = 'date_updated=VALUES(date_updated)';
+        $sql = "INSERT INTO " . $table . " (" . implode(',', $fields) . ")"
+            . " VALUES (" . implode(',', $values) . ")"
+            . " ON DUPLICATE KEY UPDATE " . implode(',', $updates);
         $this->db->query($sql);
     }
 

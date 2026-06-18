@@ -19,6 +19,17 @@ if ($action === 'pending_pdfs') {
     exit;
 }
 
+// ── AJAX: return the full WooCommerce order JSON stored in the local cache ──
+if ($action === 'cached_order_json') {
+    header('Content-Type: application/json');
+    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
+        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
+    }
+    $sync = new WooBankSync($db, $conf, $langs);
+    echo json_encode(array('ok' => true, 'orders' => $sync->getCachedOrderJsonRows()));
+    exit;
+}
+
 // ── AJAX: download one PDF by order ID from the local cache (no API call) ──
 if ($action === 'download_pdf_single') {
     header('Content-Type: application/json');
@@ -116,6 +127,7 @@ $ajaxToken = newToken();
 <input class="button" type="submit" value="Check &amp; update differences" title="Re-fetches all synced orders from WooCommerce and updates Dolibarr bank entries where invoice number, buyer name or amounts differ. WooCommerce is always the source of truth.">
 </form>
 <button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs using URLs already stored locally — no WooCommerce API call">&#128196; Download past invoice PDFs</button>
+ <button class="button" type="button" onclick="wbsOpenJsonModal()" title="View the full WooCommerce order responses stored in the local cache">{ } View cached Woo JSON</button>
 <br>
 <?php
 
@@ -196,9 +208,75 @@ if ($resql) {
   </div>
 </div>
 
+<div id="wbsJsonModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10001;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:90%;max-width:1100px;height:86vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
+      <strong>{ } Cached WooCommerce order JSON</strong>
+      <span onclick="document.getElementById('wbsJsonModal').style.display='none';" style="cursor:pointer;font-size:22px;line-height:1;color:#666;">&times;</span>
+    </div>
+    <div style="padding:12px 20px;border-bottom:1px solid #ddd;">
+      <label for="wbsJsonOrder"><strong>Order:</strong></label>
+      <select id="wbsJsonOrder" class="flat" style="min-width:320px;margin-left:8px;" onchange="wbsShowCachedJson(this.value)"></select>
+      <span id="wbsJsonStatus" style="margin-left:12px;color:#666;"></span>
+    </div>
+    <pre id="wbsJsonContent" style="flex:1;overflow:auto;margin:0;padding:16px 20px;background:#1e1e1e;color:#d4d4d4;font:13px/1.45 monospace;white-space:pre-wrap;word-break:break-word;"></pre>
+    <div style="padding:10px 20px;border-top:1px solid #ddd;text-align:right;">
+      <button class="button" type="button" onclick="document.getElementById('wbsJsonModal').style.display='none';">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 var _wbsAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
 var _wbsToken   = <?php echo json_encode(newToken()); ?>;
+var _wbsCachedOrders = [];
+
+function wbsOpenJsonModal() {
+    var modal = document.getElementById('wbsJsonModal');
+    var select = document.getElementById('wbsJsonOrder');
+    modal.style.display = 'flex';
+    select.innerHTML = '';
+    select.disabled = true;
+    document.getElementById('wbsJsonStatus').textContent = 'Loading cache…';
+    document.getElementById('wbsJsonContent').textContent = '';
+
+    fetch(_wbsAjaxUrl + '?action=cached_order_json&token=' + encodeURIComponent(_wbsToken))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (!data.ok) throw new Error(data.error || 'Could not read cache');
+            _wbsCachedOrders = data.orders || [];
+            if (_wbsCachedOrders.length === 0) {
+                document.getElementById('wbsJsonStatus').textContent = 'No full order JSON is cached yet.';
+                document.getElementById('wbsJsonContent').textContent = 'Run/update database checks in Setup, then run Sync now or Check & update differences to populate the JSON cache.';
+                return;
+            }
+            _wbsCachedOrders.forEach(function(order, index) {
+                var option = document.createElement('option');
+                option.value = String(index);
+                option.textContent = '#' + order.number + (order.invoice ? ' — ' + order.invoice : '') + (order.date_updated ? ' — ' + order.date_updated : '');
+                select.appendChild(option);
+            });
+            select.disabled = false;
+            document.getElementById('wbsJsonStatus').textContent = _wbsCachedOrders.length + ' cached orders';
+            wbsShowCachedJson('0');
+        })
+        .catch(function(error) {
+            document.getElementById('wbsJsonStatus').textContent = 'Error';
+            document.getElementById('wbsJsonContent').textContent = error.message;
+        });
+}
+
+function wbsShowCachedJson(index) {
+    var order = _wbsCachedOrders[parseInt(index, 10)];
+    if (!order) return;
+    var output = order.json || '';
+    try {
+        output = JSON.stringify(JSON.parse(output), null, 2);
+    } catch (e) {
+        // Keep the stored value visible even if it is not valid JSON.
+    }
+    document.getElementById('wbsJsonContent').textContent = output;
+}
 
 function wbsOpenPdfModal() {
     var modal = document.getElementById('wbsPdfModal');
