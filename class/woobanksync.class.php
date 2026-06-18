@@ -1246,11 +1246,14 @@ class WooBankSync
             $pdfUrl = $this->extractWooInvoicePdfUrlFromOrder($order);
             if ($germanizedEnabled && $gzd !== null) {
                 $gzdData = $gzd->getOrderDocumentData($id);
-                $cacheMeta['germanized'] = $gzdData;
+                if (!empty($gzdData['documents']) || empty($gzdData['error'])) {
+                    $cacheMeta['germanized'] = $gzdData;
+                    unset($cacheMeta['germanized_refresh_error']);
+                } else {
+                    $cacheMeta['germanized_refresh_error'] = (string) $gzdData['error'];
+                }
                 if (!empty($gzdData['invoice_number'])) $invoiceNumber = (string) $gzdData['invoice_number'];
                 if (!empty($gzdData['invoice_pdf_url'])) $pdfUrl = (string) $gzdData['invoice_pdf_url'];
-            } else {
-                unset($cacheMeta['germanized']);
             }
             $merged['_woobanksync_cache'] = $cacheMeta;
 
