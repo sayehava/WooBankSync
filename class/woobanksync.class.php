@@ -554,7 +554,9 @@ class WooBankSync
             'payout_amount' => 'double(24,8) DEFAULT 0',
             'woo_invoice_number' => 'varchar(255) DEFAULT NULL',
             'sync_message' => 'text',
-            'date_sync' => 'datetime DEFAULT NULL'
+            'date_sync' => 'datetime DEFAULT NULL',
+            'woo_invoice_pdf_url' => 'varchar(500) DEFAULT NULL',
+            'pdf_ecm_filepath' => 'varchar(500) DEFAULT NULL',
         );
         foreach ($columns as $column => $definition) {
             $resql = $this->db->query("SHOW COLUMNS FROM " . $table . " LIKE '" . $this->db->escape($column) . "'");
