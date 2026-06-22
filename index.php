@@ -86,7 +86,7 @@ if ($action === 'download_pdf_single') {
     $sync = new WooBankSync($db, $conf, $langs);
 
     if ($force) {
-        // Force mode: live-fetch order from WooCommerce — no cache table dependency.
+        // Force mode: let fetchStoreaBillPdf handle the API call — no getFullOrder needed.
         $sqlLog = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
             . ' WHERE entity=' . (int) $conf->entity . " AND woo_order_id='" . $db->escape($wooOrderId) . "' LIMIT 1";
         $rLog = $db->query($sqlLog);
@@ -94,45 +94,14 @@ if ($action === 'download_pdf_single') {
         if (!$logRow) {
             echo json_encode(array('ok' => false, 'error' => 'Order not in sync log', 'log' => array())); exit;
         }
-        $wooUrl = trim((string) ($conf->global->WBS_WOO_URL ?? ''));
-        $key    = trim((string) ($conf->global->WBS_WOO_CONSUMER_KEY ?? ''));
-        $secret = trim((string) ($conf->global->WBS_WOO_CONSUMER_SECRET ?? ''));
-        $liveLog = array();
-        $pdfUrl = '';
-        $invoiceNumber = '';
-        if ($wooUrl !== '' && $key !== '' && $secret !== '') {
-            require_once DOL_DOCUMENT_ROOT . '/custom/woobanksync/class/wbsgermanizedclient.class.php';
-            $gzd = new WbsGermanizedClient($wooUrl, $key, $secret);
-            $liveLog[] = 'Fetching order #' . $logRow->woo_order_number . ' from WooCommerce...';
-            $fullOrder = $gzd->getFullOrder((int) $wooOrderId);
-            if ($fullOrder !== false) {
-                $liveLog[] = 'Got response — scanning fields for PDF URL (invoices, shipments, document endpoint)...';
-                $pdfUrl = $sync->extractPdfUrlFromLiveOrder($fullOrder);
-                if ($pdfUrl !== '') {
-                    $liveLog[] = 'Found in order fields: ' . $pdfUrl;
-                } else {
-                    $liveLog[] = 'Not in order fields — trying Germanized document endpoint...';
-                    $pdfUrl = $gzd->getInvoicePdfUrl((int) $wooOrderId, $fullOrder);
-                    if ($pdfUrl !== '') $liveLog[] = 'Found via document endpoint: ' . $pdfUrl;
-                }
-                $invoiceNumber = (string) $gzd->getInvoiceNumber((int) $wooOrderId, $fullOrder);
-            } else {
-                $liveLog[] = 'WooCommerce API error: ' . $gzd->error;
-            }
-        } else {
-            $liveLog[] = 'WooCommerce credentials not configured.';
-        }
-        if ($pdfUrl === '') {
-            echo json_encode(array('ok' => false, 'error' => 'No PDF URL found in WooCommerce response. Make sure Germanized Pro has generated an invoice for this order.', 'log' => $liveLog)); exit;
-        }
         @set_time_limit(120);
-        $ecmPath = $sync->downloadInvoicePdfPublic((string) $logRow->woo_order_id, (string) $logRow->woo_order_number, $invoiceNumber, $pdfUrl, true);
-        $allLog = array_merge($liveLog, $sync->pdfLog);
+        // Pass empty pdfUrl — downloadAndStoreInvoicePdf will try SAB first, then fallback if URL known.
+        $ecmPath = $sync->downloadInvoicePdfPublic((string) $logRow->woo_order_id, (string) $logRow->woo_order_number, '', '', true);
         if ($ecmPath !== '') {
             $sync->updateCacheEcmPath((string) $logRow->woo_order_id, $ecmPath);
-            echo json_encode(array('ok' => true, 'filepath' => $ecmPath, 'log' => $allLog));
+            echo json_encode(array('ok' => true, 'filepath' => $ecmPath, 'log' => $sync->pdfLog));
         } else {
-            echo json_encode(array('ok' => false, 'error' => 'URL found but download failed — see log for details', 'log' => $allLog));
+            echo json_encode(array('ok' => false, 'error' => 'Download failed — see log for details', 'log' => $sync->pdfLog));
         }
         exit;
     }
