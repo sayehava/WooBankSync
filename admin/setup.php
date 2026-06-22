@@ -353,13 +353,12 @@ if ($action === 'setup_cached_json_item') {
     exit;
 }
 
-if ($action === 'desync') {
-    if (GETPOST('confirm_desync', 'alpha') !== 'yes') {
-        setEventMessages('Desync was not confirmed.', null, 'errors');
-    } else {
-        list($ok, $msg) = $sync->desyncAllSyncedEntries();
-        setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
-    }
+if ($action === 'desync_ajax') {
+    header('Content-Type: application/json');
+    if (!$user->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit; }
+    list($ok, $msg, $stats) = $sync->desyncAllSyncedEntries();
+    echo json_encode(array('ok' => $ok, 'message' => $msg, 'stats' => $stats ?? array()));
+    exit;
 }
 
 llxHeader('', $langs->trans('WooBankSyncSetup'));
@@ -1077,18 +1076,118 @@ function wbsSetupTestPdf(){
 <?php
 
 ?>
-<br><table class="noborder centpercent">
-<tr class="liste_titre"><td>Danger zone</td></tr>
-<tr><td>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" onsubmit="return confirm(&quot;⚠️ Are you sure? This will delete all Dolibarr bank lines created by WooBankSync and clear the sync log so orders can be synced again.&quot;);">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>">
-<input type="hidden" name="action" value="desync">
-<input type="hidden" name="confirm_desync" value="yes">
-<input class="button button-delete" style="background:#b00020;color:#fff;border-color:#b00020;" type="submit" value="⚠️ Desync: delete synced bank entries and reset log">
-</form>
-<span class="opacitymedium">Deletes only bank lines stored in the WooBankSync log. It does not delete WooCommerce orders and does not touch manually-created bank entries.</span>
-</td></tr></table>
-<?php
+<!-- Danger zone -->
+<br>
+<table class="noborder centpercent">
+    <tr class="liste_titre"><td>Danger zone</td></tr>
+    <tr><td>
+        <button class="button button-delete" type="button"
+                style="background:#b00020;color:#fff;border-color:#b00020;"
+                onclick="wbsOpenDesyncModal()">
+            ⚠️ Desync: delete synced bank entries, PDFs and reset log
+        </button>
+        <br><span class="opacitymedium">
+            Deletes bank lines stored in the WooBankSync log, downloaded PDF files, and clears the sync log.
+            Does not touch WooCommerce orders or manually-created Dolibarr entries.
+        </span>
+    </td></tr>
+</table>
 
+<!-- Desync confirmation + progress modal -->
+<div id="wbsDesyncModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:10000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:6px;width:600px;max-width:94%;box-shadow:0 8px 32px rgba(0,0,0,.28);">
+        <div style="padding:16px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
+            <strong style="color:#b00020;">⚠️ Desync — confirm deletion</strong>
+            <span onclick="wbsDesyncEsc()" style="cursor:pointer;font-size:22px;color:#666;">&times;</span>
+        </div>
+        <div id="wbsDesyncConfirmStep" style="padding:18px 20px;">
+            <p style="margin:0 0 12px;">This will permanently delete:</p>
+            <ul style="margin:0 0 16px;padding-left:20px;line-height:1.8;">
+                <li>All Dolibarr bank lines created by WooBankSync</li>
+                <li>All invoice PDF files downloaded to Dolibarr ECM</li>
+                <li>All WooBankSync sync log entries</li>
+                <li>All WooBankSync order cache entries</li>
+            </ul>
+            <p style="margin:0 0 16px;color:#555;">WooCommerce orders and manually-created Dolibarr entries are <strong>not</strong> affected.</p>
+            <p style="margin:0 0 16px;font-weight:bold;color:#b00020;">This action cannot be undone.</p>
+            <div style="display:flex;gap:10px;">
+                <button id="wbsDesyncConfirmBtn" class="button button-delete"
+                        style="background:#b00020;color:#fff;border-color:#b00020;"
+                        onclick="wbsRunDesync()">Yes, delete everything</button>
+                <button class="button" type="button" onclick="wbsDesyncEsc()">Cancel</button>
+            </div>
+        </div>
+        <div id="wbsDesyncProgressStep" style="display:none;padding:18px 20px;text-align:center;">
+            <div style="font-size:2em;margin-bottom:12px;">⏳</div>
+            <div style="color:#555;">Running desync — please wait…</div>
+        </div>
+        <div id="wbsDesyncResultStep" style="display:none;padding:18px 20px;">
+            <div id="wbsDesyncResultIcon" style="font-size:2em;text-align:center;margin-bottom:10px;"></div>
+            <div id="wbsDesyncResultMsg" style="margin-bottom:14px;text-align:center;"></div>
+            <table id="wbsDesyncResultTable" class="noborder centpercent" style="font-size:.9em;display:none;">
+                <tr><td>Bank lines deleted</td><td id="wbsDrBank" style="text-align:right;font-weight:bold;"></td></tr>
+                <tr><td>PDF files deleted</td><td id="wbsDrPdfs" style="text-align:right;font-weight:bold;"></td></tr>
+                <tr><td>Log rows deleted</td><td id="wbsDrLogs" style="text-align:right;font-weight:bold;"></td></tr>
+            </table>
+            <div style="margin-top:16px;text-align:center;">
+                <button class="button" type="button" onclick="wbsDesyncEsc()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function wbsDesyncEsc() {
+    document.getElementById('wbsDesyncModal').style.display = 'none';
+    document.getElementById('wbsDesyncConfirmStep').style.display  = 'block';
+    document.getElementById('wbsDesyncProgressStep').style.display = 'none';
+    document.getElementById('wbsDesyncResultStep').style.display   = 'none';
+    document.getElementById('wbsDesyncConfirmBtn').disabled = false;
+}
+
+function wbsOpenDesyncModal() {
+    wbsDesyncEsc();
+    document.getElementById('wbsDesyncModal').style.display = 'flex';
+}
+
+function wbsRunDesync() {
+    document.getElementById('wbsDesyncConfirmBtn').disabled = true;
+    document.getElementById('wbsDesyncConfirmStep').style.display  = 'none';
+    document.getElementById('wbsDesyncProgressStep').style.display = 'block';
+
+    var fd = new FormData();
+    fd.append('token', <?php echo json_encode(newToken()); ?>);
+    fd.append('action', 'desync_ajax');
+
+    fetch(<?php echo json_encode($_SERVER['PHP_SELF']); ?>, {method: 'POST', body: fd})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            document.getElementById('wbsDesyncProgressStep').style.display = 'none';
+            document.getElementById('wbsDesyncResultStep').style.display   = 'block';
+            if (d.ok) {
+                document.getElementById('wbsDesyncResultIcon').textContent = '✅';
+                document.getElementById('wbsDesyncResultMsg').textContent  = 'Desync complete.';
+                var s = d.stats || {};
+                document.getElementById('wbsDrBank').textContent = s.bank  || 0;
+                document.getElementById('wbsDrPdfs').textContent = s.pdfs  || 0;
+                document.getElementById('wbsDrLogs').textContent = s.logs  || 0;
+                document.getElementById('wbsDesyncResultTable').style.display = 'table';
+            } else {
+                document.getElementById('wbsDesyncResultIcon').textContent = '❌';
+                document.getElementById('wbsDesyncResultMsg').style.color  = '#b00020';
+                document.getElementById('wbsDesyncResultMsg').textContent  = d.error || 'Desync failed.';
+            }
+        })
+        .catch(function(e) {
+            document.getElementById('wbsDesyncProgressStep').style.display = 'none';
+            document.getElementById('wbsDesyncResultStep').style.display   = 'block';
+            document.getElementById('wbsDesyncResultIcon').textContent = '❌';
+            document.getElementById('wbsDesyncResultMsg').style.color  = '#b00020';
+            document.getElementById('wbsDesyncResultMsg').textContent  = 'Request failed: ' + e;
+        });
+}
+</script>
+
+<?php
 llxFooter();
 $db->close();
