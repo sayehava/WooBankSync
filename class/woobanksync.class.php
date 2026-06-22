@@ -1615,45 +1615,41 @@ class WooBankSync
             return false;
         }
 
-        $downloadUrl = '';
+        $sabId = 0;
         $invoiceNumber = '';
         $list = isset($invoices[0]) ? $invoices : array_values($invoices);
         foreach ($list as $item) {
             if (!is_array($item)) continue;
-            foreach (array('download_url', 'file_url', 'url') as $f) {
-                if (!empty($item[$f])) { $downloadUrl = (string) $item[$f]; break; }
-            }
-            if ($downloadUrl !== '' && empty($invoiceNumber)) {
+            if (!empty($item['id'])) $sabId = (int) $item['id'];
+            if (empty($invoiceNumber)) {
                 foreach (array('formatted_number', 'number', 'document_number') as $nf) {
                     if (!empty($item[$nf])) { $invoiceNumber = (string) $item[$nf]; break; }
                 }
             }
-            if ($downloadUrl !== '') break;
+            if ($sabId > 0) break;
         }
 
-        if ($downloadUrl === '') {
-            $this->pdfLog[] = '[SAB-1] No download_url in SAB response (' . count($list) . ' item(s) returned)';
+        if ($sabId <= 0) {
+            $this->pdfLog[] = '[SAB-1] No invoice ID in SAB response (' . count($list) . ' item(s) returned — check if SAB plugin is active)';
             return false;
         }
-        $this->pdfLog[] = '[SAB-1] Got download URL: ' . $downloadUrl;
-
-        // Store the invoice number so caller can use it for the filename
+        $this->pdfLog[] = '[SAB-1] Got SAB invoice ID: ' . $sabId . ($invoiceNumber !== '' ? ' (' . $invoiceNumber . ')' : '');
         $this->lastSabInvoiceNumber = $invoiceNumber;
 
-        // Try with WC credentials appended (SAB download endpoints require WC auth)
-        $sep = strpos($downloadUrl, '?') !== false ? '&' : '?';
-        $authUrl = $downloadUrl . $sep . 'consumer_key=' . urlencode($key) . '&consumer_secret=' . urlencode($secret);
-        $this->pdfLog[] = '[SAB-2] Downloading with WC credentials: ' . $authUrl;
-        $body = $this->curlGet($authUrl, '', '');
+        // Download from dedicated PDF endpoint — returns binary content directly
+        $pdfPath = '/wp-json/sab/v1/invoices/' . $sabId . '/pdf';
+        $pdfUrlWithAuth = $wooUrl . $pdfPath . '?consumer_key=' . urlencode($key) . '&consumer_secret=' . urlencode($secret);
+        $this->pdfLog[] = '[SAB-2] Downloading from: ' . $wooUrl . $pdfPath;
+        $body = $this->curlGet($pdfUrlWithAuth, '', '');
         if ($body !== false && strlen($body) >= 64 && substr($body, 0, 4) === '%PDF') {
             $this->pdfLog[] = '[SAB-2] OK — got PDF (' . strlen($body) . ' bytes)';
             return $body;
         }
         $this->pdfLog[] = '[SAB-2] failed: ' . ($body === false ? 'connection/HTTP error' : 'not a PDF, starts with: ' . substr((string) $body, 0, 80));
 
-        // Try with Basic auth header
-        $this->pdfLog[] = '[SAB-3] Downloading with Basic auth: ' . $downloadUrl;
-        $body = $this->curlGet($downloadUrl, $key, $secret);
+        // Retry with Basic auth header
+        $this->pdfLog[] = '[SAB-3] Retry with Basic auth header: ' . $wooUrl . $pdfPath;
+        $body = $this->curlGet($wooUrl . $pdfPath, $key, $secret);
         if ($body !== false && strlen($body) >= 64 && substr($body, 0, 4) === '%PDF') {
             $this->pdfLog[] = '[SAB-3] OK — got PDF (' . strlen($body) . ' bytes)';
             return $body;
