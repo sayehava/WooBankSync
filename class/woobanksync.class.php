@@ -1606,13 +1606,16 @@ class WooBankSync
             }
         }
 
-        $sql = 'SELECT relpath, fullpath, filepath FROM ' . MAIN_DB_PREFIX . 'ecm_directories WHERE rowid=' . $folderId . ' AND entity=' . (int) $this->conf->entity;
+        // Use SELECT * to avoid "Unknown column" errors — Dolibarr versions differ in column names.
+        // No entity filter: the folder ID was stored per-install; a mismatch here would be a config issue.
+        $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'ecm_directories WHERE rowid=' . $folderId;
         $resql = $this->db->query($sql);
         if (!$resql || !($obj = $this->db->fetch_object($resql))) {
             $this->pdfLog[] = '[STORE] ECM folder row not found (ID=' . $folderId . ') — re-run database checks in Setup';
             return '';
         }
-        $relpath = trim((string) (!empty($obj->relpath) ? $obj->relpath : (!empty($obj->fullpath) ? $obj->fullpath : $obj->filepath)), '/');
+        // Path column differs by Dolibarr version: try relpath, fullpath, filepath in order
+        $relpath = trim((string) (!empty($obj->relpath) ? $obj->relpath : (!empty($obj->fullpath) ? $obj->fullpath : ($obj->filepath ?? ''))), '/');
         if ($relpath === '') {
             $this->pdfLog[] = '[STORE] ECM folder has empty path — re-run database checks in Setup';
             return '';
