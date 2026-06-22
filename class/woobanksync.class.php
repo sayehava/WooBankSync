@@ -1283,16 +1283,11 @@ class WooBankSync
         $e = (int) $this->conf->entity;
 
         if ($force) {
-            // Force: all synced orders from the log, left-joined with cache for the best available PDF URL.
-            // Orders without a PDF URL are included so the user can see them and their download log.
-            $sql = 'SELECT l.woo_order_id, l.woo_order_number,'
-                . " COALESCE(NULLIF(l.woo_invoice_number,''),NULLIF(c.woo_invoice_number,''),'') AS woo_invoice_number,"
-                . " COALESCE(NULLIF(l.woo_invoice_pdf_url,''),NULLIF(c.woo_invoice_pdf_url,''),'') AS woo_invoice_pdf_url,"
-                . ' c.pdf_ecm_filepath'
-                . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_log l'
-                . ' LEFT JOIN ' . MAIN_DB_PREFIX . 'woobanksync_order_cache c'
-                . ' ON c.woo_order_id=l.woo_order_id AND c.entity=l.entity'
-                . ' WHERE l.entity=' . $e . " AND l.sync_status='synced' ORDER BY l.rowid DESC";
+            // Force: all synced orders from the log — live WooCommerce fetch happens per-order in download_pdf_single.
+            // No JOIN with cache and no reference to dynamically-added columns to avoid column-existence errors.
+            $sql = 'SELECT woo_order_id, woo_order_number'
+                . " FROM " . MAIN_DB_PREFIX . 'woobanksync_log'
+                . ' WHERE entity=' . $e . " AND sync_status='synced' ORDER BY rowid DESC";
         } else {
             $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath'
                 . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
