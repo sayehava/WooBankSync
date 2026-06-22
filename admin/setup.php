@@ -251,6 +251,35 @@ if ($action === 'setup_test_pdf') {
     exit;
 }
 
+// AJAX: return sync log rows for the log viewer modal
+if ($action === 'setup_log_list') {
+    header('Content-Type: application/json');
+    if (!$user->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit; }
+    $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $conf->entity . ' ORDER BY rowid DESC LIMIT 1000';
+    $resql = $db->query($sql);
+    $rows = array();
+    if ($resql) {
+        while ($obj = $db->fetch_object($resql)) {
+            $rows[] = array(
+                'id'      => (string) ($obj->woo_order_id ?? ''),
+                'number'  => (string) ($obj->woo_order_number ?? ''),
+                'invoice' => (string) ($obj->woo_invoice_number ?? ''),
+                'payment' => (string) ($obj->payment_method ?? ''),
+                'gross'   => (string) ($obj->gross_amount ?? ''),
+                'fee'     => (string) ($obj->fee_amount ?? ''),
+                'currency'=> (string) ($obj->currency ?? ''),
+                'status'  => (string) ($obj->sync_status ?? ''),
+                'message' => (string) ($obj->sync_message ?? ''),
+                'date'    => (string) ($obj->date_sync ?? ''),
+                'pdf_url' => (string) ($obj->woo_invoice_pdf_url ?? ''),
+                'pdf_ecm' => (string) ($obj->pdf_ecm_filepath ?? ''),
+            );
+        }
+    }
+    echo json_encode(array('ok' => true, 'rows' => $rows));
+    exit;
+}
+
 // AJAX: list synced orders for cache refresh (called from setup page JS)
 if ($action === 'setup_cache_refresh_list') {
     header('Content-Type: application/json');
@@ -313,10 +342,36 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
 <?php
 
 ?>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center" style="margin-bottom:12px;">
+<div class="center" style="margin-bottom:12px;">
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="dbcheck">
 <input class="button" type="submit" value="Run/update database checks without disabling module">
 </form>
+ &nbsp; <button class="button" type="button" onclick="wbsSetupOpenLogModal()">View sync log</button>
+</div>
+<?php
+
+// ── Log viewer modal ──────────────────────────────────────────────────────────
+?>
+<div id="wbsLogModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:95%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;">
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:12px;">
+      <b style="flex:1;font-size:1.1em;">Sync log</b>
+      <input type="text" id="wbsLogSearch" placeholder="Search order #, invoice, payment, status…" class="flat" style="width:300px;" oninput="wbsSetupFilterLog()">
+      <span id="wbsLogCount" style="font-size:0.85em;color:#888;white-space:nowrap;"></span>
+      <button class="button" type="button" onclick="wbsSetupEsc('wbsLogModal')">Close</button>
+    </div>
+    <div style="overflow:auto;flex:1;">
+      <table class="liste centpercent" id="wbsLogTable" style="font-size:0.82em;">
+        <thead><tr class="liste_titre">
+          <th>Date sync</th><th>Order #</th><th>Invoice #</th><th>Payment</th>
+          <th class="right">Gross</th><th class="right">Fee</th><th>Status</th><th>PDF</th><th>Message</th>
+        </tr></thead>
+        <tbody id="wbsLogBody"><tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 <?php
 
 ?>
@@ -693,6 +748,48 @@ function wbsSetupShowCachedJson(orderId){
     try{document.getElementById("wbsSetupJsonPre").textContent=JSON.stringify(JSON.parse(d.json),null,2);}
     catch(e){document.getElementById("wbsSetupJsonPre").textContent=d.json;}
   }).catch(function(e){document.getElementById("wbsSetupJsonPre").textContent="Request failed: "+e;});
+}
+var _wbsLogAllRows = [];
+function wbsSetupOpenLogModal(){
+  _wbsLogAllRows=[];
+  document.getElementById("wbsLogSearch").value="";
+  document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr>';
+  document.getElementById("wbsLogCount").textContent="";
+  document.getElementById("wbsLogModal").style.display="flex";
+  var fd=new FormData();fd.append("token",_wbsSetupToken);fd.append("action","setup_log_list");
+  fetch(_wbsSetupAjaxUrl,{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){
+    if(!d.ok){document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="9">Error: '+d.error+'</td></tr>';return;}
+    _wbsLogAllRows=d.rows||[];
+    wbsSetupFilterLog();
+  }).catch(function(e){document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="9">Request failed: '+e+'</td></tr>';});
+}
+function wbsSetupFilterLog(){
+  var q=(document.getElementById("wbsLogSearch").value||"").toLowerCase().trim();
+  var rows=q?_wbsLogAllRows.filter(function(r){
+    return (r.number+r.invoice+r.payment+r.status+r.message).toLowerCase().indexOf(q)>=0;
+  }):_wbsLogAllRows;
+  document.getElementById("wbsLogCount").textContent=rows.length+" of "+_wbsLogAllRows.length+" rows";
+  var html="";
+  rows.forEach(function(r,i){
+    var cls=i%2===0?"impair":"pair";
+    var statusCol=r.status==="synced"?"color:#090":"color:#c00";
+    var pdf="";
+    if(r.pdf_ecm)pdf='<span title="Saved locally">&#128196;</span>';
+    else if(r.pdf_url)pdf='<a href="'+r.pdf_url+'" target="_blank" title="Stored URL">&#8599;</a>';
+    html+='<tr class="'+cls+'">';
+    html+='<td style="white-space:nowrap;">'+r.date.substring(0,16)+'</td>';
+    html+='<td>#'+r.number+'</td>';
+    html+='<td>'+r.invoice+'</td>';
+    html+='<td>'+r.payment+'</td>';
+    html+='<td style="text-align:right;">'+parseFloat(r.gross||0).toFixed(2)+'</td>';
+    html+='<td style="text-align:right;">'+parseFloat(r.fee||0).toFixed(2)+' '+r.currency+'</td>';
+    html+='<td style="'+statusCol+'">'+r.status+'</td>';
+    html+='<td>'+pdf+'</td>';
+    html+='<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+r.message.replace(/"/g,'&quot;')+'">'+r.message+'</td>';
+    html+='</tr>';
+  });
+  if(!rows.length)html='<tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
+  document.getElementById("wbsLogBody").innerHTML=html;
 }
 </script>
 <?php
