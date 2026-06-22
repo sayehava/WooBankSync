@@ -67,9 +67,10 @@ if ($action === 'difference_batch') {
     if (empty($orderIds)) {
         echo json_encode(array('ok' => false, 'error' => 'No order IDs supplied')); exit;
     }
+    $forceDiff = (GETPOST('force', 'alphanohtml') === '1');
     @set_time_limit(300);
     $sync = new WooBankSync($db, $conf, $langs);
-    echo json_encode(array('ok' => true, 'result' => $sync->resyncDifferences($orderIds)));
+    echo json_encode(array('ok' => true, 'result' => $sync->resyncDifferences($orderIds, $forceDiff)));
     exit;
 }
 
@@ -126,7 +127,8 @@ llxHeader('', $langs->trans('WooBankSync'));
 
 ?>
 <button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
-<button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:10px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
+<button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:4px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
+<label title="Force-update all bank entries even if no change is detected (re-writes labels and amounts)" style="cursor:pointer;margin-right:10px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDiff" style="vertical-align:middle;margin-right:3px;">Force update all</label>
 <button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs using URLs already stored locally — no WooCommerce API call">&#128196; Download past invoice PDFs</button>
  <label title="Force re-download all PDFs including those already saved (useful when download failed silently)" style="cursor:pointer;margin-left:4px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
 <br>
@@ -289,17 +291,18 @@ function wbsFinishSync(imported, skipped, errors) {
 }
 
 function wbsOpenDifferenceModal() {
+    var force = document.getElementById('wbsForceDiff').checked ? '1' : '0';
     document.getElementById('wbsDifferenceModal').style.display = 'flex';
     document.getElementById('wbsDifferenceBar').style.width = '0%';
     document.getElementById('wbsDifferenceList').innerHTML = '';
     document.getElementById('wbsDifferenceSummary').textContent = '';
     document.getElementById('wbsDifferenceClose').style.display = 'none';
-    document.getElementById('wbsDifferenceStatus').textContent = 'Loading synced order list…';
+    document.getElementById('wbsDifferenceStatus').textContent = 'Loading synced order list' + (force === '1' ? ' (force mode)' : '') + '…';
     fetch(_wbsAjaxUrl + '?action=difference_list&token=' + encodeURIComponent(_wbsToken))
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (!data.ok) throw new Error(data.error || 'Could not load orders');
-            wbsRunDifferenceBatch(data.orders || [], data.batch_size || 10, 0, 0, 0, 0);
+            wbsRunDifferenceBatch(data.orders || [], data.batch_size || 10, 0, 0, 0, 0, force);
         })
         .catch(function(error) {
             document.getElementById('wbsDifferenceStatus').textContent = 'Error: ' + error.message;
@@ -307,7 +310,7 @@ function wbsOpenDifferenceModal() {
         });
 }
 
-function wbsRunDifferenceBatch(orders, batchSize, offset, updated, unchanged, errors) {
+function wbsRunDifferenceBatch(orders, batchSize, offset, updated, unchanged, errors, force) {
     if (offset >= orders.length) {
         document.getElementById('wbsDifferenceBar').style.width = '100%';
         document.getElementById('wbsDifferenceStatus').textContent = 'Difference check completed.';
@@ -319,7 +322,7 @@ function wbsRunDifferenceBatch(orders, batchSize, offset, updated, unchanged, er
     document.getElementById('wbsDifferenceBar').style.width = Math.round((offset / orders.length) * 100) + '%';
     document.getElementById('wbsDifferenceStatus').textContent = 'Checking ' + (offset + 1) + '–' + Math.min(offset + batch.length, orders.length) + ' of ' + orders.length + '…';
     var ids = batch.map(function(order) { return order.id; }).join(',');
-    var body = 'action=difference_batch&order_ids=' + encodeURIComponent(ids) + '&token=' + encodeURIComponent(_wbsToken);
+    var body = 'action=difference_batch&order_ids=' + encodeURIComponent(ids) + '&force=' + (force || '0') + '&token=' + encodeURIComponent(_wbsToken);
     fetch(_wbsAjaxUrl, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body})
         .then(function(r) { return r.json(); })
         .then(function(data) {
@@ -334,12 +337,12 @@ function wbsRunDifferenceBatch(orders, batchSize, offset, updated, unchanged, er
                 list.appendChild(row);
             });
             list.scrollTop = list.scrollHeight;
-            wbsRunDifferenceBatch(orders, batchSize, offset + batch.length, updated + (result.updated || 0), unchanged + (result.unchanged || 0), errors + (result.errors || 0));
+            wbsRunDifferenceBatch(orders, batchSize, offset + batch.length, updated + (result.updated || 0), unchanged + (result.unchanged || 0), errors + (result.errors || 0), force);
         })
         .catch(function(error) {
             errors += batch.length;
             document.getElementById('wbsDifferenceList').textContent += '❌ ' + error.message + '\n';
-            wbsRunDifferenceBatch(orders, batchSize, offset + batch.length, updated, unchanged, errors);
+            wbsRunDifferenceBatch(orders, batchSize, offset + batch.length, updated, unchanged, errors, force);
         });
 }
 

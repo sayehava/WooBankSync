@@ -314,7 +314,7 @@ class WooBankSync
         return $rows;
     }
 
-    public function resyncDifferences(array $orderIds = array())
+    public function resyncDifferences(array $orderIds = array(), $force = false)
     {
         $stats = array('checked' => 0, 'updated' => 0, 'unchanged' => 0, 'errors' => 0, 'messages' => array(), 'items' => array());
         $table = MAIN_DB_PREFIX . 'woobanksync_log';
@@ -402,18 +402,18 @@ class WooBankSync
                 // Keep only the reconciliation fields current. Full JSON refresh is a separate action.
                 $this->upsertOrderCache($orderId, (string) $logRow->woo_order_number, $newInvoiceNumber, $newPdfUrl, $oldEcmPath);
 
-                if (!$invoiceDiff && !$grossDiff && !$feeDiff && !$pdfMissing && !$pdfUrlChanged) {
+                if (!$force && !$invoiceDiff && !$grossDiff && !$feeDiff && !$pdfMissing && !$pdfUrlChanged) {
                     $stats['unchanged']++;
                     $stats['items'][] = array('id' => $orderId, 'number' => (string) $logRow->woo_order_number, 'status' => 'unchanged');
                     continue;
                 }
-
                 $changed = array();
                 if ($invoiceDiff) $changed[] = 'invoice_number(' . ($oldInvoiceNumber ?: 'none') . '→' . ($newInvoiceNumber ?: 'none') . ')';
                 if ($grossDiff) $changed[] = 'gross(' . $oldGross . '→' . $newGross . ')';
                 if ($feeDiff) $changed[] = 'fee(' . $oldFee . '→' . $newFee . ')';
                 if ($pdfMissing) $changed[] = 'pdf_missing(will download)';
                 if ($pdfUrlChanged && !$pdfMissing) $changed[] = 'pdf_url_changed';
+                if ($force && empty($changed)) $changed[] = 'force-update';
 
                 $ok = $this->applyOrderUpdate($logRow, $order, $newInvoiceNumber, $newBuyerName, $newGross, $newFee, $newPdfUrl);
                 if ($ok) {
