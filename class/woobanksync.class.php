@@ -1286,6 +1286,13 @@ class WooBankSync
         return $this->fetchPdfContent((string) $url);
     }
 
+    public function testFetchStoreaBillPdf($orderId)
+    {
+        $this->pdfLog = array();
+        $this->lastSabInvoiceNumber = '';
+        return $this->fetchStoreaBillPdf((int) $orderId);
+    }
+
     public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
     {
         return $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force);

@@ -212,34 +212,41 @@ if ($action === 'save_storeabill') {
     }
 }
 
-// AJAX: test downloading a PDF URL and return the full attempt log (no file saved)
+// AJAX: test downloading a PDF — order ID uses SAB endpoint, URL uses direct fetch (no file saved)
 if ($action === 'setup_test_pdf') {
     header('Content-Type: application/json');
     if (!$user->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied', 'log' => array())); exit; }
     $testUrl = trim(GETPOST('pdf_url', 'restricthtml'));
     $orderId  = trim(GETPOST('woo_order_id', 'alphanohtml'));
-    if ($testUrl === '' && $orderId !== '') {
-        $sql = 'SELECT woo_invoice_pdf_url FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
-            . ' WHERE entity=' . (int) $conf->entity . " AND woo_order_id='" . $db->escape($orderId) . "' LIMIT 1";
-        $r = $db->query($sql);
-        if ($r && ($o = $db->fetch_object($r))) $testUrl = (string) ($o->woo_invoice_pdf_url ?? '');
-        if ($testUrl === '') {
-            $sql = 'SELECT woo_invoice_pdf_url FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
-                . ' WHERE entity=' . (int) $conf->entity . " AND woo_order_id='" . $db->escape($orderId) . "' LIMIT 1";
-            $r = $db->query($sql);
-            if ($r && ($o = $db->fetch_object($r))) $testUrl = (string) ($o->woo_invoice_pdf_url ?? '');
-        }
+
+    if ($orderId !== '') {
+        // Order ID mode: use StoreaBill endpoint — no cache lookup needed
+        $content = $sync->testFetchStoreaBillPdf((int) $orderId);
+        echo json_encode(array(
+            'ok'             => ($content !== false),
+            'mode'           => 'sab',
+            'order_id'       => $orderId,
+            'invoice_number' => $sync->lastSabInvoiceNumber,
+            'bytes'          => ($content !== false ? strlen($content) : 0),
+            'is_pdf'         => ($content !== false && substr($content, 0, 4) === '%PDF'),
+            'log'            => $sync->pdfLog,
+        ));
+        exit;
     }
+
     if ($testUrl === '') {
-        echo json_encode(array('ok' => false, 'error' => 'No PDF URL provided and none found in cache/log for that order ID.', 'log' => array())); exit;
+        echo json_encode(array('ok' => false, 'error' => 'Enter a WooCommerce order ID or a direct PDF URL.', 'log' => array())); exit;
     }
+
+    // URL mode: direct fetch with fallback strategies
     $content = $sync->testFetchPdfUrl($testUrl);
     echo json_encode(array(
-        'ok'       => ($content !== false),
-        'bytes'    => ($content !== false ? strlen($content) : 0),
-        'is_pdf'   => ($content !== false && substr($content, 0, 4) === '%PDF'),
-        'url'      => $testUrl,
-        'log'      => $sync->pdfLog,
+        'ok'     => ($content !== false),
+        'mode'   => 'url',
+        'url'    => $testUrl,
+        'bytes'  => ($content !== false ? strlen($content) : 0),
+        'is_pdf' => ($content !== false && substr($content, 0, 4) === '%PDF'),
+        'log'    => $sync->pdfLog,
     ));
     exit;
 }
@@ -758,9 +765,9 @@ document.getElementById("wbsDiagModal").style.display="flex";
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">PDF download test</td></tr>
 <tr><td class="titlefield">Order ID or PDF URL</td><td>
-<input type="text" id="wbsTestPdfInput" class="flat" placeholder="e.g. 30955  OR  https://shop.example.com/wp-content/uploads/storeabill-xxx/invoice.pdf" style="width:500px;max-width:100%;">
+<input type="text" id="wbsTestPdfInput" class="flat" placeholder="WooCommerce order ID (e.g. 30955)  OR  https://... direct PDF URL" style="width:500px;max-width:100%;">
  <button class="button" type="button" onclick="wbsSetupTestPdf()">Test download attempt</button>
-<br><span class="opacitymedium">Enter a WooCommerce order ID (looks up the cached PDF URL) or paste a PDF URL directly. Shows every download attempt and the result. Does not save any file.</span>
+<br><span class="opacitymedium">Order ID → calls the StoreaBill API endpoint directly (no cache required). URL → tries direct fetch strategies. Does not save any file.</span>
 </td></tr>
 <tr><td class="titlefield" style="vertical-align:top;padding-top:6px;">Attempt log</td><td>
 <pre id="wbsTestPdfLog" style="font-size:0.82em;background:#f5f5f5;border:1px solid #ddd;padding:10px;min-height:80px;white-space:pre-wrap;word-break:break-all;margin:0;border-radius:4px;"></pre>
@@ -775,11 +782,14 @@ function wbsSetupTestPdf(){
   fetch(_wbsSetupAjaxUrl,{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){
     var lines=[];
     lines.push("Result: "+(d.ok?"OK":"FAILED"));
+    if(d.mode==="sab"){lines.push("Mode: StoreaBill API endpoint (no cache used)");}
+    else if(d.mode==="url"){lines.push("Mode: direct URL fetch");}
+    if(d.invoice_number)lines.push("Invoice number from SAB: "+d.invoice_number);
     if(d.url)lines.push("URL tested: "+d.url);
     if(d.bytes)lines.push("Bytes received: "+d.bytes);
-    if(d.is_pdf!==undefined)lines.push("Valid PDF header: "+(d.is_pdf?"YES":"NO - response is not a PDF"));
+    if(d.is_pdf!==undefined)lines.push("Valid PDF header: "+(d.is_pdf?"YES":"NO — response is not a PDF"));
     if(d.error)lines.push("Error: "+d.error);
-    if(d.log&&d.log.length){lines.push("","=== Download attempts ===",...d.log);}
+    if(d.log&&d.log.length){lines.push("","=== Attempt log ===");d.log.forEach(function(l){lines.push(l);});}
     document.getElementById("wbsTestPdfLog").textContent=lines.join("\n");
   }).catch(function(e){document.getElementById("wbsTestPdfLog").textContent="Request failed: "+e;});
 }
