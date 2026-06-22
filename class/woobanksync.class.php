@@ -1540,7 +1540,6 @@ class WooBankSync
 
     private function downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
     {
-        if (empty($pdfUrl)) return '';
         $folderId = (int) $this->getConst('WBS_DOCUMENT_FOLDER_ID', '0');
         if ($folderId <= 0) {
             $folderId = (int) $this->findOrCreateEcmFolder('Woo Invoices');
@@ -1569,7 +1568,24 @@ class WooBankSync
         $filepath = $dir . '/' . $filename;
         $ecmRelPath = $relpath . '/' . $filename;
 
-        $content = $this->fetchPdfContent($pdfUrl);
+        // Try StoreaBill API first — authenticated, works on protected files, fastest path.
+        $this->lastSabInvoiceNumber = '';
+        $content = $this->fetchStoreaBillPdf($orderId);
+        if ($content !== false && $invoiceNumber === '' && $this->lastSabInvoiceNumber !== '') {
+            $invoiceNumber = $this->lastSabInvoiceNumber;
+            // Rebuild filename with the invoice number we just got from SAB
+            $filename = 'woo-' . $safe($orderNumber) . '-' . $safe($invoiceNumber) . '-dld-' . $ts . '.pdf';
+            $filepath = $dir . '/' . $filename;
+            $ecmRelPath = $relpath . '/' . $filename;
+        }
+        // Fall back to URL-based download when SAB fails or is not configured
+        if ($content === false) {
+            if (empty($pdfUrl)) {
+                $this->pdfLog[] = 'SAB endpoint failed and no fallback PDF URL available.';
+                return '';
+            }
+            $content = $this->fetchPdfContent($pdfUrl);
+        }
         if ($content === false || strlen($content) < 64) return '';
         if (file_put_contents($filepath, $content) === false) return '';
 
