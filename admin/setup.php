@@ -348,6 +348,29 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
 <input class="button" type="submit" value="Run/update database checks without disabling module">
 </form>
  &nbsp; <button class="button" type="button" onclick="wbsSetupOpenLogModal()">View sync log</button>
+ &nbsp; <button class="button" type="button" onclick="wbsSetupOpenPdfModal()">&#128196; Download invoice PDFs</button>
+ <label title="Force re-download all even if already saved" style="cursor:pointer;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsSetupForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
+</div>
+<?php
+
+// ── PDF download modal (calls index.php AJAX — token valid for same session) ─
+?>
+<div id="wbsSetupPdfModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9998;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:82%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.28);">
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
+      <strong>&#128196; Download past invoice PDFs</strong>
+      <span onclick="wbsSetupEsc('wbsSetupPdfModal')" style="cursor:pointer;font-size:22px;color:#666;">&times;</span>
+    </div>
+    <div style="padding:14px 20px 10px;">
+      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;"><div id="wbsSetupPdfBar" style="width:0%;height:10px;background:#28a745;border-radius:4px;transition:width .4s;"></div></div>
+      <div id="wbsSetupPdfStatus" style="margin-top:6px;font-size:.88em;color:#555;">Preparing&hellip;</div>
+    </div>
+    <div id="wbsSetupPdfList" style="flex:1;overflow-y:auto;padding:4px 20px 10px;font-size:.9em;"></div>
+    <div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:10px;align-items:center;">
+      <button id="wbsSetupPdfDoneBtn" class="button" style="display:none;" onclick="wbsSetupEsc('wbsSetupPdfModal')">Close</button>
+      <span id="wbsSetupPdfSummary" style="font-size:.88em;color:#666;"></span>
+    </div>
+  </div>
 </div>
 <?php
 
@@ -670,10 +693,70 @@ Also stores the full WooCommerce JSON for use with the viewer below. Use a limit
 ?>
 <script>
 var _wbsSetupAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
+var _wbsIndexAjaxUrl = <?php echo json_encode(DOL_URL_ROOT . '/custom/woobanksync/index.php'); ?>;
 var _wbsSetupToken = <?php echo json_encode(newToken()); ?>;
 var _wbsSetupCacheOrders = [], _wbsSetupCacheIdx = 0, _wbsSetupCacheBatch = 10;
 var _wbsSetupCacheUpdated = 0, _wbsSetupCacheErrors = 0;
 function wbsSetupEsc(id){document.getElementById(id).style.display="none";}
+function wbsEsc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function wbsSetupOpenPdfModal(){
+  var force=document.getElementById("wbsSetupForceDownload").checked?"1":"0";
+  document.getElementById("wbsSetupPdfModal").style.display="flex";
+  document.getElementById("wbsSetupPdfList").innerHTML="";
+  document.getElementById("wbsSetupPdfBar").style.width="0%";
+  document.getElementById("wbsSetupPdfStatus").textContent="Fetching pending list…";
+  document.getElementById("wbsSetupPdfDoneBtn").style.display="none";
+  document.getElementById("wbsSetupPdfSummary").textContent="";
+  fetch(_wbsIndexAjaxUrl+"?action=pending_pdfs&force="+force+"&token="+encodeURIComponent(_wbsSetupToken))
+    .then(function(r){return r.json();}).then(function(data){
+      var orders=data.orders||[];
+      if(!orders.length){
+        document.getElementById("wbsSetupPdfStatus").textContent="No pending PDFs found. Use Force re-download all to re-fetch from WooCommerce.";
+        document.getElementById("wbsSetupPdfBar").style.width="100%";
+        document.getElementById("wbsSetupPdfDoneBtn").style.display="inline-block";
+        return;
+      }
+      document.getElementById("wbsSetupPdfStatus").textContent="0 / "+orders.length+(force==="1"?" (force mode)":"")+" — downloading…";
+      orders.forEach(function(o){
+        var row=document.createElement("div");
+        row.id="wbss-row-"+o.id;
+        row.style.cssText="padding:7px 0;border-bottom:1px solid #f2f2f2;display:flex;flex-direction:column;gap:2px;";
+        row.innerHTML='<div style="display:flex;align-items:center;gap:10px;"><span id="wbss-icon-'+o.id+'" style="font-size:1.15em;min-width:1.4em;text-align:center;">⏳</span><span style="flex:1;">#'+wbsEsc(o.number)+(o.invoice?" &ndash; "+wbsEsc(o.invoice):"")+'</span></div><pre id="wbss-note-'+o.id+'" style="font-size:.75em;color:#888;margin:0 0 0 1.8em;white-space:pre-wrap;word-break:break-all;"></pre>';
+        document.getElementById("wbsSetupPdfList").appendChild(row);
+      });
+      wbsSetupDownloadNext(orders,0,0,0,force);
+    }).catch(function(e){
+      document.getElementById("wbsSetupPdfStatus").textContent="Error: "+e.message;
+      document.getElementById("wbsSetupPdfDoneBtn").style.display="inline-block";
+    });
+}
+function wbsSetupDownloadNext(orders,idx,ok,fail,force){
+  var total=orders.length;
+  if(idx>=total){
+    document.getElementById("wbsSetupPdfBar").style.width="100%";
+    document.getElementById("wbsSetupPdfStatus").textContent="Done.";
+    document.getElementById("wbsSetupPdfDoneBtn").style.display="inline-block";
+    document.getElementById("wbsSetupPdfSummary").textContent="✅ "+ok+" downloaded   ❌ "+fail+" failed";
+    return;
+  }
+  var o=orders[idx];
+  document.getElementById("wbsSetupPdfBar").style.width=Math.round(idx/total*100)+"%";
+  document.getElementById("wbsSetupPdfStatus").textContent=(idx+1)+" / "+total+" — downloading #"+wbsEsc(o.number)+"…";
+  var el=document.getElementById("wbss-row-"+o.id);if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"});
+  var body="action=download_pdf_single&woo_order_id="+encodeURIComponent(o.id)+"&force="+(force||"0")+"&token="+encodeURIComponent(_wbsSetupToken);
+  fetch(_wbsIndexAjaxUrl,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body})
+    .then(function(r){return r.json();}).then(function(res){
+      var icon=document.getElementById("wbss-icon-"+o.id);
+      var note=document.getElementById("wbss-note-"+o.id);
+      var logStr=(res.log&&res.log.length)?"\n"+res.log.join("\n"):"";
+      if(res.ok){icon.textContent=res.already?"✔️":"✅";note.textContent=(res.already?"already saved":"saved")+logStr;ok++;}
+      else{icon.textContent="❌";note.textContent=(res.error||"failed")+logStr;fail++;}
+      wbsSetupDownloadNext(orders,idx+1,ok,fail,force);
+    }).catch(function(){
+      var icon=document.getElementById("wbss-icon-"+o.id);if(icon)icon.textContent="❌";fail++;
+      wbsSetupDownloadNext(orders,idx+1,ok,fail,force);
+    });
+}
 function wbsSetupOpenCacheModal(){
   var rangeLatest=document.getElementById("wbsCacheRangeLatest").checked;
   var limit=rangeLatest?parseInt(document.getElementById("wbsCacheLimit").value,10):0;
