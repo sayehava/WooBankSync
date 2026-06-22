@@ -1218,9 +1218,9 @@ class WooBankSync
         return array(false, 'Probed ' . count(array_slice($recentOrders, 0, 5)) . ' recent orders — no StoreaBill URL found. Make sure Germanized Pro has generated at least one invoice. Use the Inspect diagnostic below to see what invoice fields the API returns.');
     }
 
-    public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl)
+    public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
     {
-        return $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl);
+        return $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force);
     }
 
     public function updateCacheEcmPath($orderId, $ecmFilepath)
@@ -1246,7 +1246,7 @@ class WooBankSync
         return is_file($base . '/' . $ecmFilepath);
     }
 
-    public function getPendingPdfOrders()
+    public function getPendingPdfOrders($force = false)
     {
         $rows = array();
         $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
@@ -1256,10 +1256,12 @@ class WooBankSync
         $resql = $this->db->query($sql);
         if (!$resql) return $rows;
         while ($obj = $this->db->fetch_object($resql)) {
-            $ecmFilepath = (string) ($obj->pdf_ecm_filepath ?? '');
-            if ($this->isInvoicePdfStored($ecmFilepath)) continue;
-            if ($ecmFilepath !== '') {
-                $this->updateCacheEcmPath((string) $obj->woo_order_id, '');
+            if (!$force) {
+                $ecmFilepath = (string) ($obj->pdf_ecm_filepath ?? '');
+                if ($this->isInvoicePdfStored($ecmFilepath)) continue;
+                if ($ecmFilepath !== '') {
+                    $this->updateCacheEcmPath((string) $obj->woo_order_id, '');
+                }
             }
             $rows[] = array(
                 'id' => (string) $obj->woo_order_id,
@@ -1456,7 +1458,7 @@ class WooBankSync
         $this->db->query($sql);
     }
 
-    private function downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl)
+    private function downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
     {
         if (empty($pdfUrl)) return '';
         $folderId = (int) $this->getConst('WBS_DOCUMENT_FOLDER_ID', '0');
