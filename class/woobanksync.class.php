@@ -572,15 +572,77 @@ class WooBankSync
             }
         }
 
+        // 5) Collect PDF paths before deleting log rows
+        $pdfPaths = array();
+        $ecmBase = !empty($this->conf->ecm->dir_output)
+            ? rtrim($this->conf->ecm->dir_output, '/\\')
+            : (defined('DOL_DATA_ROOT') ? rtrim(DOL_DATA_ROOT, '/\\') . '/ecm' : '');
+        $pdfResql = $this->db->query('SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity);
+        if ($pdfResql) {
+            while ($pdfObj = $this->db->fetch_object($pdfResql)) {
+                $path = trim((string) ($pdfObj->pdf_ecm_filepath ?? ''), '/\\');
+                if ($path !== '') $pdfPaths[] = $path;
+            }
+        }
+        // Also collect from cache table
+        $cacheT = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        $cols = $this->getTableColumns($cacheT);
+        if (in_array('pdf_ecm_filepath', $cols, true)) {
+            $cRes = $this->db->query("SELECT pdf_ecm_filepath FROM $cacheT WHERE entity=" . (int) $this->conf->entity . " AND pdf_ecm_filepath IS NOT NULL AND pdf_ecm_filepath!=''");
+            if ($cRes) {
+                while ($cObj = $this->db->fetch_object($cRes)) {
+                    $path = trim((string) ($cObj->pdf_ecm_filepath ?? ''), '/\\');
+                    if ($path !== '') $pdfPaths[] = $path;
+                }
+            }
+        }
+        $pdfPaths = array_values(array_unique($pdfPaths));
+
+        // 6) Delete physical PDF files and their ECM records
+        $deletedPdfs = 0;
+        $affectedFolderIds = array();
+        foreach ($pdfPaths as $relPath) {
+            if ($ecmBase !== '' && is_file($ecmBase . '/' . $relPath)) {
+                @unlink($ecmBase . '/' . $relPath);
+                $deletedPdfs++;
+            }
+            // Remove ecm_files record
+            $ecmResql = $this->db->query(
+                "SELECT rowid, fk_parent FROM " . MAIN_DB_PREFIX . "ecm_files"
+                . " WHERE entity=" . (int) $this->conf->entity
+                . " AND fullpath_orig='" . $this->db->escape($relPath) . "' LIMIT 1"
+            );
+            if ($ecmResql && ($ecmObj = $this->db->fetch_object($ecmResql))) {
+                $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'ecm_files WHERE rowid=' . (int) $ecmObj->rowid);
+                if (!empty($ecmObj->fk_parent)) $affectedFolderIds[] = (int) $ecmObj->fk_parent;
+            }
+        }
+        // Recount folder file counts
+        foreach (array_unique($affectedFolderIds) as $fid) {
+            $this->db->query(
+                'UPDATE ' . MAIN_DB_PREFIX . 'ecm_directories'
+                . ' SET cachenbofdoc=(SELECT COUNT(*) FROM ' . MAIN_DB_PREFIX . 'ecm_files'
+                . ' WHERE fk_parent=' . $fid . ' AND entity=' . (int) $this->conf->entity . ')'
+                . ' WHERE rowid=' . $fid
+            );
+        }
+
+        // 7) Delete log rows and cache rows
         $deletedLogs = $this->countRows($table, 'entity=' . (int) $this->conf->entity);
-        $sql = 'DELETE FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity;
-        if (!$this->db->query($sql)) {
+        if (!$this->db->query('DELETE FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity)) {
             $this->db->rollback();
             return array(false, 'Could not clear WooBankSync log: ' . $this->db->lasterror());
         }
+        $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache WHERE entity=' . (int) $this->conf->entity);
         $this->db->commit();
 
-        return array(true, 'Desync complete. Deleted ' . (int) $deletedBank . ' bank line(s), ' . (int) $deletedLinks . ' bank link(s), ' . (int) $deletedClasses . ' bank class row(s), and ' . (int) $deletedLogs . ' WooBankSync log row(s).');
+        return array(true, 'Desync complete.', array(
+            'bank'    => (int) $deletedBank,
+            'links'   => (int) $deletedLinks,
+            'classes' => (int) $deletedClasses,
+            'logs'    => (int) $deletedLogs,
+            'pdfs'    => (int) $deletedPdfs,
+        ));
     }
 
     private function countRows($table, $where)
