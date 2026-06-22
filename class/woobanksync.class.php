@@ -1575,55 +1575,76 @@ class WooBankSync
 
     private function downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
     {
+        // ── Step 1: Fetch PDF binary (SAB first, URL fallback) ────────────────
+        // Always try to download BEFORE any ECM setup so pdfLog is always populated.
+        $this->lastSabInvoiceNumber = '';
+        $content = $this->fetchStoreaBillPdf($orderId);
+        if ($content !== false && $invoiceNumber === '' && $this->lastSabInvoiceNumber !== '') {
+            $invoiceNumber = $this->lastSabInvoiceNumber;
+        }
+        if ($content === false) {
+            if (!empty($pdfUrl)) {
+                $this->pdfLog[] = '[DL] SAB failed — trying stored URL fallback';
+                $content = $this->fetchPdfContent($pdfUrl);
+            }
+        }
+        if ($content === false || strlen($content) < 64) {
+            $this->pdfLog[] = '[DL] No valid PDF content obtained (SAB' . (!empty($pdfUrl) ? ' + URL fallback' : '') . ' both failed)';
+            return '';
+        }
+        $this->pdfLog[] = '[DL] Got ' . strlen($content) . ' bytes — proceeding to save';
+
+        // ── Step 2: Resolve ECM folder ────────────────────────────────────────
         $folderId = (int) $this->getConst('WBS_DOCUMENT_FOLDER_ID', '0');
         if ($folderId <= 0) {
             $folderId = (int) $this->findOrCreateEcmFolder('Woo Invoices');
             if ($folderId > 0) {
                 $this->setConst('WBS_DOCUMENT_FOLDER_ID', (string) $folderId, 'chaine');
             } else {
+                $this->pdfLog[] = '[STORE] ECM folder "Woo Invoices" not found — go to Setup and click "Create/repair Woo Invoices folder"';
                 return '';
             }
         }
 
         $sql = 'SELECT relpath, fullpath, filepath FROM ' . MAIN_DB_PREFIX . 'ecm_directories WHERE rowid=' . $folderId . ' AND entity=' . (int) $this->conf->entity;
         $resql = $this->db->query($sql);
-        if (!$resql || !($obj = $this->db->fetch_object($resql))) return '';
+        if (!$resql || !($obj = $this->db->fetch_object($resql))) {
+            $this->pdfLog[] = '[STORE] ECM folder row not found (ID=' . $folderId . ') — re-run database checks in Setup';
+            return '';
+        }
         $relpath = trim((string) (!empty($obj->relpath) ? $obj->relpath : (!empty($obj->fullpath) ? $obj->fullpath : $obj->filepath)), '/');
-        if ($relpath === '') return '';
+        if ($relpath === '') {
+            $this->pdfLog[] = '[STORE] ECM folder has empty path — re-run database checks in Setup';
+            return '';
+        }
 
-        $base = !empty($this->conf->ecm->dir_output) ? rtrim($this->conf->ecm->dir_output, '/\\') : (defined('DOL_DATA_ROOT') ? DOL_DATA_ROOT . '/ecm' : '');
-        if ($base === '') return '';
+        $base = !empty($this->conf->ecm->dir_output)
+            ? rtrim($this->conf->ecm->dir_output, '/\\')
+            : (defined('DOL_DATA_ROOT') ? rtrim(DOL_DATA_ROOT, '/\\') . '/ecm' : '');
+        if ($base === '') {
+            $this->pdfLog[] = '[STORE] ECM base directory not configured in Dolibarr';
+            return '';
+        }
 
         $dir = $base . '/' . $relpath;
-        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) return '';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
+            $this->pdfLog[] = '[STORE] Cannot create ECM directory: ' . $dir;
+            return '';
+        }
 
+        // ── Step 3: Write file ────────────────────────────────────────────────
         $safe = static function ($s) { return preg_replace('/[^a-zA-Z0-9\-_]/', '-', trim((string) $s)); };
         $ts = time();
         $filename = 'woo-' . $safe($orderNumber) . ($invoiceNumber !== '' ? '-' . $safe($invoiceNumber) : '') . '-dld-' . $ts . '.pdf';
         $filepath = $dir . '/' . $filename;
         $ecmRelPath = $relpath . '/' . $filename;
 
-        // Try StoreaBill API first — authenticated, works on protected files, fastest path.
-        $this->lastSabInvoiceNumber = '';
-        $content = $this->fetchStoreaBillPdf($orderId);
-        if ($content !== false && $invoiceNumber === '' && $this->lastSabInvoiceNumber !== '') {
-            $invoiceNumber = $this->lastSabInvoiceNumber;
-            // Rebuild filename with the invoice number we just got from SAB
-            $filename = 'woo-' . $safe($orderNumber) . '-' . $safe($invoiceNumber) . '-dld-' . $ts . '.pdf';
-            $filepath = $dir . '/' . $filename;
-            $ecmRelPath = $relpath . '/' . $filename;
+        if (file_put_contents($filepath, $content) === false) {
+            $this->pdfLog[] = '[STORE] file_put_contents failed: ' . $filepath;
+            return '';
         }
-        // Fall back to URL-based download when SAB fails or is not configured
-        if ($content === false) {
-            if (empty($pdfUrl)) {
-                $this->pdfLog[] = 'SAB endpoint failed and no fallback PDF URL available.';
-                return '';
-            }
-            $content = $this->fetchPdfContent($pdfUrl);
-        }
-        if ($content === false || strlen($content) < 64) return '';
-        if (file_put_contents($filepath, $content) === false) return '';
 
+        $this->pdfLog[] = '[STORE] Saved: ' . $ecmRelPath;
         $this->registerEcmFile($folderId, $filename, $ecmRelPath, $orderId, $invoiceNumber);
         return $ecmRelPath;
     }
