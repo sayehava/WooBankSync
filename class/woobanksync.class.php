@@ -1197,14 +1197,42 @@ class WooBankSync
             }
         }
 
-        // Step 2: probe WooCommerce — fetch recent orders and check every known URL field
-        $client = $this->client();
-        $recentOrders = $client->getRecentOrders(5);
-        if ($recentOrders === false) {
-            return array(false, 'No StoreaBill URLs in cache and WooCommerce connection failed: ' . $client->error);
+        // Step 1b: scan raw_order_json in cache (if populated by setup cache refresh — zero extra HTTP calls)
+        $cacheTable = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        if (in_array('raw_order_json', $this->getTableColumns($cacheTable), true)) {
+            $sql = 'SELECT raw_order_json FROM ' . $cacheTable
+                . ' WHERE entity=' . (int) $this->conf->entity
+                . " AND raw_order_json IS NOT NULL AND raw_order_json != '' LIMIT 20";
+            $resql = $this->db->query($sql);
+            if ($resql) {
+                while ($obj = $this->db->fetch_object($resql)) {
+                    $decoded = json_decode((string) $obj->raw_order_json, true);
+                    if (!is_array($decoded)) continue;
+                    $found = '';
+                    if ($this->findPatternInData($decoded, $pattern, $found)) {
+                        $this->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                        return array(true, 'Detected from cached order JSON: ' . $found);
+                    }
+                }
+            }
         }
-        if (empty($recentOrders)) {
-            return array(false, 'No StoreaBill URLs in cache and no recent orders found in WooCommerce.');
+
+        // Step 2: probe WooCommerce — use recently synced orders (more likely to have invoices than most-recent orders)
+        $client = $this->client();
+        $syncedIds = array();
+        $sqlIds = 'SELECT woo_order_id FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+            . ' WHERE entity=' . (int) $this->conf->entity . " AND sync_status='synced' ORDER BY rowid DESC LIMIT 5";
+        $rIds = $this->db->query($sqlIds);
+        if ($rIds) {
+            while ($obj = $this->db->fetch_object($rIds)) $syncedIds[] = (string) $obj->woo_order_id;
+        }
+        // Fall back to most-recent WooCommerce orders if nothing is synced yet
+        $ordersToProbe = !empty($syncedIds) ? $client->getOrdersByIds($syncedIds) : $client->getRecentOrders(5);
+        if ($ordersToProbe === false) {
+            return array(false, 'No StoreaBill URLs in any local data and WooCommerce connection failed: ' . $client->error);
+        }
+        if (empty($ordersToProbe)) {
+            return array(false, 'No StoreaBill URLs found and no orders available to probe.');
         }
 
         $gzd = new WbsGermanizedClient(
@@ -1213,25 +1241,33 @@ class WooBankSync
             (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '')
         );
 
-        foreach (array_slice($recentOrders, 0, 5) as $recent) {
+        $scanPattern = '#/uploads/(storeabill-[a-z0-9]+)/#i';
+
+        // 2a: scan each order from the list response (includes Germanized extensions)
+        foreach ($ordersToProbe as $recent) {
+            if (!is_array($recent)) continue;
+            $found = '';
+            if ($this->findPatternInData($recent, $scanPattern, $found)) {
+                $this->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                return array(true, 'Detected from order list response (order #' . ($recent['number'] ?? $recent['id'] ?? '?') . '): ' . $found);
+            }
+        }
+
+        // 2b: per-order single-endpoint + document endpoint (slower but most complete)
+        foreach (array_slice($ordersToProbe, 0, 5) as $recent) {
             $orderId = (int) ($recent['id'] ?? 0);
             if ($orderId <= 0) continue;
             $orderNum = (string) ($recent['number'] ?? $orderId);
-
-            // Both URL paths and absolute filesystem paths contain /uploads/storeabill-xxx/
-            $scanPattern = '#/uploads/(storeabill-[a-z0-9]+)/#i';
             $found = '';
 
-            // 2a: single-order endpoint — recursively scan every string value (invoices, attachments, meta_data, etc.)
             $fullOrder = $gzd->getFullOrder($orderId);
             if ($fullOrder !== false) {
                 if ($this->findPatternInData($fullOrder, $scanPattern, $found)) {
                     $this->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
-                    return array(true, 'Detected from order #' . $orderNum . ' single-order response: ' . $found);
+                    return array(true, 'Detected from single-order endpoint (order #' . $orderNum . '): ' . $found);
                 }
             }
 
-            // 2b: Germanized document endpoint — recursively scan the full document objects
             $docs = $gzd->getOrderDocuments($orderId);
             if ($docs !== false) {
                 if ($this->findPatternInData($docs, $scanPattern, $found)) {
@@ -1241,7 +1277,7 @@ class WooBankSync
             }
         }
 
-        return array(false, 'Probed ' . count(array_slice($recentOrders, 0, 5)) . ' recent orders — no StoreaBill URL found in any response field. Use "Inspect WooCommerce order meta" in Diagnostics to see the raw API response. Then use the PDF download test in the Setup page to test a URL manually.');
+        return array(false, 'Probed ' . count($ordersToProbe) . ' synced orders — no StoreaBill URL found. If invoices exist, use "Inspect WooCommerce order meta" in Diagnostics and look for shipments.invoices.path in the JSON. Then use PDF download test in Setup to test the URL manually.');
     }
 
     public function testFetchPdfUrl($url)
