@@ -1294,12 +1294,13 @@ class WooBankSync
         return (string) $obj->raw_order_json;
     }
 
-    public function getFullCacheRefreshOrders()
+    public function getFullCacheRefreshOrders($limit = 0)
     {
         $rows = array();
         $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND sync_status='synced' ORDER BY rowid DESC";
+        if ($limit > 0) $sql .= ' LIMIT ' . (int) $limit;
         $resql = $this->db->query($sql);
         if (!$resql) return $rows;
         while ($obj = $this->db->fetch_object($resql)) {
@@ -1311,7 +1312,7 @@ class WooBankSync
         return $rows;
     }
 
-    public function refreshFullCacheBatch(array $orderIds)
+    public function refreshFullCacheBatch(array $orderIds, $storeJson = false)
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
         $batchSize = max(1, min(100, (int) $this->getConst('WBS_CACHE_BATCH_SIZE', '1')));
@@ -1319,8 +1320,9 @@ class WooBankSync
         if (empty($ids)) return array('updated' => 0, 'errors' => 0, 'items' => array());
 
         $client = $this->client();
-        // Fetch only the fields needed for invoice reconciliation to keep responses small
-        $orders = $client->getOrdersByIds($ids, array('id', 'number', 'billing', 'meta_data', 'invoices'));
+        // When storeJson=true (setup/debug mode) fetch all fields; otherwise minimal fields for speed
+        $fields = $storeJson ? array() : array('id', 'number', 'billing', 'meta_data', 'invoices');
+        $orders = $client->getOrdersByIds($ids, $fields);
         if ($orders === false) {
             return array('updated' => 0, 'errors' => count($ids), 'items' => array(), 'error' => $client->error);
         }
@@ -1366,7 +1368,7 @@ class WooBankSync
             $orderNumber = (string) ($order['number'] ?? ($cacheRow['order_number'] ?? $key));
             $ecmFilepath = (string) ($cacheRow['ecm_filepath'] ?? '');
 
-            $this->upsertOrderCache($key, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath);
+            $this->upsertOrderCache($key, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath, $storeJson ? $order : null);
 
             $result['updated']++;
             $result['items'][] = array(
