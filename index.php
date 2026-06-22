@@ -85,57 +85,27 @@ if ($action === 'download_pdf_single') {
     $force = (GETPOST('force', 'alphanohtml') === '1');
     $sync = new WooBankSync($db, $conf, $langs);
 
-    if ($force) {
-        // Force mode: let fetchStoreaBillPdf handle the API call — no getFullOrder needed.
-        $sqlLog = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
-            . ' WHERE entity=' . (int) $conf->entity . " AND woo_order_id='" . $db->escape($wooOrderId) . "' LIMIT 1";
-        $rLog = $db->query($sqlLog);
-        $logRow = ($rLog) ? $db->fetch_object($rLog) : null;
-        if (!$logRow) {
-            echo json_encode(array('ok' => false, 'error' => 'Order not in sync log', 'log' => array())); exit;
-        }
-        @set_time_limit(120);
-        // Pass empty pdfUrl — downloadAndStoreInvoicePdf will try SAB first, then fallback if URL known.
-        $ecmPath = $sync->downloadInvoicePdfPublic((string) $logRow->woo_order_id, (string) $logRow->woo_order_number, '', '', true);
-        if ($ecmPath !== '') {
-            $sync->updateCacheEcmPath((string) $logRow->woo_order_id, $ecmPath);
-            echo json_encode(array('ok' => true, 'filepath' => $ecmPath, 'log' => $sync->pdfLog));
-        } else {
-            echo json_encode(array('ok' => false, 'error' => 'Download failed — see log for details', 'log' => $sync->pdfLog));
-        }
-        exit;
+    // Fetch order info from log (always reliable — no cache dependency).
+    $sqlLog = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        . ' WHERE entity=' . (int) $conf->entity . " AND woo_order_id='" . $db->escape($wooOrderId) . "' LIMIT 1";
+    $rLog = $db->query($sqlLog);
+    $logRow = ($rLog) ? $db->fetch_object($rLog) : null;
+    if (!$logRow) {
+        echo json_encode(array('ok' => false, 'error' => 'Order not in sync log', 'log' => array())); exit;
     }
 
-    // Non-force mode: use cache (populated during sync).
-    $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath'
-        . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
-        . ' WHERE entity=' . (int) $conf->entity . " AND woo_order_id='" . $db->escape($wooOrderId) . "' LIMIT 1";
-    $resql = $db->query($sql);
-    if (!$resql || !($row = $db->fetch_object($resql))) {
-        echo json_encode(array('ok' => false, 'error' => 'No cached PDF URL for this order — enable "Force re-download all" to fetch from WooCommerce directly', 'log' => array())); exit;
-    }
-    if (empty($row->woo_invoice_pdf_url)) {
-        echo json_encode(array('ok' => false, 'error' => 'No PDF URL stored — enable "Force re-download all" to fetch from WooCommerce directly', 'log' => array())); exit;
-    }
-    if (!empty($row->pdf_ecm_filepath) && $sync->isInvoicePdfStored((string) $row->pdf_ecm_filepath)) {
-        echo json_encode(array('ok' => true, 'already' => true, 'filepath' => $row->pdf_ecm_filepath, 'log' => array())); exit;
-    }
-    if (!empty($row->pdf_ecm_filepath)) {
-        $sync->updateCacheEcmPath((string) $row->woo_order_id, '');
-    }
     @set_time_limit(120);
-    $ecmPath = $sync->downloadInvoicePdfPublic(
-        (string) $row->woo_order_id,
-        (string) $row->woo_order_number,
-        (string) ($row->woo_invoice_number ?? ''),
-        (string) $row->woo_invoice_pdf_url,
-        false
+    $result = $sync->downloadAndSavePdf(
+        (string) $logRow->woo_order_id,
+        (string) $logRow->woo_order_number,
+        (string) ($logRow->woo_invoice_number ?? ''),
+        '',
+        $force
     );
-    if ($ecmPath !== '') {
-        $sync->updateCacheEcmPath((string) $row->woo_order_id, $ecmPath);
-        echo json_encode(array('ok' => true, 'filepath' => $ecmPath, 'log' => $sync->pdfLog));
+    if ($result['ok']) {
+        echo json_encode(array('ok' => true, 'already' => !empty($result['already']), 'filepath' => $result['filepath'], 'log' => $result['log']));
     } else {
-        echo json_encode(array('ok' => false, 'error' => 'Download failed — check PDF URL and folder mapping in Setup', 'log' => $sync->pdfLog));
+        echo json_encode(array('ok' => false, 'error' => 'Download failed — see log for details', 'log' => $result['log']));
     }
     exit;
 }
@@ -149,7 +119,7 @@ llxHeader('', $langs->trans('WooBankSync'));
 <button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
 <button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:4px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
 <label title="Force-update all bank entries even if no change is detected (re-writes labels and amounts)" style="cursor:pointer;margin-right:10px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDiff" style="vertical-align:middle;margin-right:3px;">Force update all</label>
-<button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs using URLs already stored locally — no WooCommerce API call">&#128196; Download past invoice PDFs</button>
+<button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs via StoreaBill API — no cache dependency">&#128196; Download past invoice PDFs</button>
  <label title="Force re-download all PDFs including those already saved (useful when download failed silently)" style="cursor:pointer;margin-left:4px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
 <br>
 <?php

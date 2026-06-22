@@ -167,8 +167,9 @@ class WooBankSync
         }
 
         $pdfEcmFilepath = '';
-        if (!$dryRun && $pdfUrl !== '' && (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1) {
-            $pdfEcmFilepath = $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl);
+        if (!$dryRun && (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1) {
+            $result = $this->downloadAndSavePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl);
+            if ($result['ok']) $pdfEcmFilepath = $result['filepath'];
         }
 
         $status = $dryRun ? 'dryrun' : 'synced';
@@ -463,9 +464,9 @@ class WooBankSync
 
         $oldEcmPath = (string) ($logRow->pdf_ecm_filepath ?? '');
         $pdfEcmFilepath = $oldEcmPath;
-        if ((int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1 && $newPdfUrl !== '' && $oldEcmPath === '') {
-            $downloaded = $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl);
-            if ($downloaded !== '') $pdfEcmFilepath = $downloaded;
+        if ((int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1) {
+            $result = $this->downloadAndSavePdf($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl);
+            if ($result['ok'] && !$result['already']) $pdfEcmFilepath = $result['filepath'];
         }
 
         $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'woobanksync_log SET'
@@ -1293,9 +1294,48 @@ class WooBankSync
         return $this->fetchStoreaBillPdf((int) $orderId);
     }
 
-    public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
+    /**
+     * Single shared entry point for all PDF download callers (sync, resync, manual download button).
+     * Always tries StoreaBill API first (order ID is enough — no URL needed).
+     * Falls back to $pdfUrl if SAB fails or is not configured.
+     * If not $force and a valid ECM file already exists, returns immediately without downloading.
+     * Persists the result to both log and cache tables.
+     *
+     * @return array{ok:bool, already:bool, filepath:string, log:string[]}
+     */
+    public function downloadAndSavePdf($orderId, $orderNumber, $invoiceNumber = '', $pdfUrl = '', $force = false)
     {
-        return $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force);
+        if (!$force) {
+            $existing = $this->getExistingEcmPath($orderId);
+            if ($existing !== '' && $this->isInvoicePdfStored($existing)) {
+                return array('ok' => true, 'already' => true, 'filepath' => $existing, 'log' => array());
+            }
+        }
+        $this->pdfLog = array();
+        $ecmPath = $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl);
+        if ($ecmPath !== '') {
+            $this->updateCacheEcmPath($orderId, $ecmPath);
+            return array('ok' => true, 'already' => false, 'filepath' => $ecmPath, 'log' => $this->pdfLog);
+        }
+        return array('ok' => false, 'already' => false, 'filepath' => '', 'log' => $this->pdfLog);
+    }
+
+    private function getExistingEcmPath($orderId)
+    {
+        $e = (int) $this->conf->entity;
+        $oid = $this->db->escape((string) $orderId);
+        // Log table first (SELECT * — dynamic columns handled via null coalescing)
+        $r = $this->db->query("SELECT * FROM " . MAIN_DB_PREFIX . "woobanksync_log WHERE entity=$e AND woo_order_id='$oid' AND sync_status='synced' LIMIT 1");
+        if ($r && ($obj = $this->db->fetch_object($r))) {
+            $path = (string) ($obj->pdf_ecm_filepath ?? '');
+            if ($path !== '') return $path;
+        }
+        // Cache table fallback
+        $r = $this->db->query("SELECT pdf_ecm_filepath FROM " . MAIN_DB_PREFIX . "woobanksync_order_cache WHERE entity=$e AND woo_order_id='$oid' LIMIT 1");
+        if ($r && ($obj = $this->db->fetch_object($r))) {
+            return (string) ($obj->pdf_ecm_filepath ?? '');
+        }
+        return '';
     }
 
     public function updateCacheEcmPath($orderId, $ecmFilepath)
@@ -1325,21 +1365,10 @@ class WooBankSync
     {
         $rows = array();
         $e = (int) $this->conf->entity;
-
-        if ($force) {
-            // Force: all synced orders from the log — live WooCommerce fetch happens per-order in download_pdf_single.
-            // No JOIN with cache and no reference to dynamically-added columns to avoid column-existence errors.
-            $sql = 'SELECT woo_order_id, woo_order_number'
-                . " FROM " . MAIN_DB_PREFIX . 'woobanksync_log'
-                . ' WHERE entity=' . $e . " AND sync_status='synced' ORDER BY rowid DESC";
-        } else {
-            $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath'
-                . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
-                . ' WHERE entity=' . $e
-                . " AND woo_invoice_pdf_url IS NOT NULL AND woo_invoice_pdf_url != ''"
-                . ' ORDER BY rowid DESC';
-        }
-
+        // Always query the log — no dependency on cache or dynamic column existence.
+        // SELECT * so optional columns (woo_invoice_number, pdf_ecm_filepath) are handled via null coalescing.
+        $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+            . ' WHERE entity=' . $e . " AND sync_status='synced' ORDER BY rowid DESC";
         $resql = $this->db->query($sql);
         if (!$resql) return $rows;
         while ($obj = $this->db->fetch_object($resql)) {
@@ -1351,10 +1380,9 @@ class WooBankSync
                 }
             }
             $rows[] = array(
-                'id' => (string) $obj->woo_order_id,
-                'number' => (string) $obj->woo_order_number,
+                'id'      => (string) $obj->woo_order_id,
+                'number'  => (string) $obj->woo_order_number,
                 'invoice' => (string) ($obj->woo_invoice_number ?? ''),
-                'pdf_url' => (string) ($obj->woo_invoice_pdf_url ?? ''),
             );
         }
         return $rows;
