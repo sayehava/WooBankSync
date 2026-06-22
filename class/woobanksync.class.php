@@ -1168,9 +1168,10 @@ class WooBankSync
             if ($orderId <= 0) continue;
             $orderNum = (string) ($recent['number'] ?? $orderId);
 
-            // 2a: single-order WC REST endpoint — includes the full invoices[] registered by Germanized Pro
+            // 2a: single-order WC REST endpoint — includes the full invoices[] and attachments[] fields
             $fullOrder = $gzd->getFullOrder($orderId);
             if ($fullOrder !== false) {
+                // invoices[] — URL fields (download_url etc.)
                 foreach ((array) ($fullOrder['invoices'] ?? array()) as $invoice) {
                     foreach ($urlFields as $f) {
                         $url = (string) ($invoice[$f] ?? '');
@@ -1178,6 +1179,20 @@ class WooBankSync
                             $folder = (string) $m[1];
                             $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
                             return array(true, 'Detected from order #' . $orderNum . ' invoices field: ' . $folder);
+                        }
+                    }
+                }
+                // attachments[] — absolute filesystem paths like /var/www/html/wp-content/uploads/storeabill-xxx/...
+                // The /uploads/ segment is present in both URLs and absolute paths
+                $pathPattern = '#/uploads/(storeabill-[a-z0-9]+)/#i';
+                foreach ((array) ($fullOrder['attachments'] ?? array()) as $att) {
+                    foreach (array('path', 'url', 'download_url', 'file') as $f) {
+                        $val = (string) ($att[$f] ?? '');
+                        if ($val === '') continue;
+                        if (preg_match($pathPattern, $val, $m)) {
+                            $folder = (string) $m[1];
+                            $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
+                            return array(true, 'Detected from order #' . $orderNum . ' attachments.path: ' . $folder);
                         }
                     }
                 }
