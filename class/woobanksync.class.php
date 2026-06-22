@@ -1241,7 +1241,8 @@ class WooBankSync
         if (empty($ids)) return array('updated' => 0, 'errors' => 0, 'items' => array());
 
         $client = $this->client();
-        $orders = $client->getOrdersByIds($ids);
+        // Fetch only the fields needed for invoice reconciliation to keep responses small
+        $orders = $client->getOrdersByIds($ids, array('id', 'number', 'billing', 'meta_data', 'invoices'));
         if ($orders === false) {
             return array('updated' => 0, 'errors' => count($ids), 'items' => array(), 'error' => $client->error);
         }
@@ -1271,43 +1272,23 @@ class WooBankSync
             }
 
             $order = $ordersById[$key];
-            $existing = $this->getCachedOrderJson($key);
-            $merged = array();
-            if ($existing !== null) {
-                $decoded = json_decode($existing, true);
-                if (is_array($decoded)) $merged = $decoded;
-            }
-            foreach ($order as $field => $value) {
-                $merged[$field] = $value;
-            }
-
-            $cacheMeta = !empty($merged['_woobanksync_cache']) && is_array($merged['_woobanksync_cache'])
-                ? $merged['_woobanksync_cache']
-                : array();
-            $cacheMeta['refreshed_at'] = dol_print_date(dol_now(), '%Y-%m-%d %H:%M:%S');
-            $cacheMeta['germanized_enabled'] = $germanizedEnabled;
-
             $invoiceNumber = $this->extractWooInvoiceNumber($order);
             $pdfUrl = $this->extractWooInvoicePdfUrlFromOrder($order);
-            if ($germanizedEnabled && $gzd !== null) {
+
+            // Only call Germanized if the invoice number is still missing after parsing order data
+            if ($germanizedEnabled && $gzd !== null && $invoiceNumber === '') {
                 $gzdData = $gzd->getOrderDocumentData($id);
-                if (!empty($gzdData['documents']) || empty($gzdData['error'])) {
-                    $cacheMeta['germanized'] = $gzdData;
-                    unset($cacheMeta['germanized_refresh_error']);
-                } else {
-                    $cacheMeta['germanized_refresh_error'] = (string) $gzdData['error'];
-                }
                 if (!empty($gzdData['invoice_number'])) $invoiceNumber = (string) $gzdData['invoice_number'];
                 if (!empty($gzdData['invoice_pdf_url'])) $pdfUrl = (string) $gzdData['invoice_pdf_url'];
             }
-            $merged['_woobanksync_cache'] = $cacheMeta;
 
             $cacheRow = $this->getOrderCacheState($key);
             if ($invoiceNumber === '') $invoiceNumber = (string) ($cacheRow['invoice_number'] ?? '');
             if ($pdfUrl === '') $pdfUrl = (string) ($cacheRow['pdf_url'] ?? '');
             $orderNumber = (string) ($order['number'] ?? ($cacheRow['order_number'] ?? $key));
             $ecmFilepath = (string) ($cacheRow['ecm_filepath'] ?? '');
-            $this->upsertOrderCache($key, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath, $merged);
+
+            $this->upsertOrderCache($key, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath);
 
             $result['updated']++;
             $result['items'][] = array(
