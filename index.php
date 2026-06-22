@@ -90,7 +90,7 @@ if ($action === 'download_pdf_single') {
         echo json_encode(array('ok' => false, 'error' => 'Order not in cache')); exit;
     }
     if (empty($row->woo_invoice_pdf_url)) {
-        echo json_encode(array('ok' => false, 'error' => 'No PDF URL in cache for this order')); exit;
+        echo json_encode(array('ok' => false, 'error' => 'No PDF URL stored for this order — run Refresh invoice cache from Setup first', 'log' => array())); exit;
     }
     $sync = new WooBankSync($db, $conf, $langs);
     $force = (GETPOST('force', 'alphanohtml') === '1');
