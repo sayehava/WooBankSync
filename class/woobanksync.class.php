@@ -1004,22 +1004,55 @@ class WooBankSync
         return '';
     }
 
-    private function extractWooInvoicePdfUrlFromOrder($order)
+    private function filesystemPathToWebUrl($path)
     {
-        if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
+        foreach (array('/wp-content/', '/wp-includes/') as $marker) {
+            $pos = strpos((string) $path, $marker);
+            if ($pos !== false) {
+                $wooUrl = rtrim((string) $this->getConst('WBS_WOO_URL', ''), '/');
+                if ($wooUrl !== '') return $wooUrl . substr($path, $pos);
+            }
+        }
+        return '';
+    }
 
-        // invoices[] is present in list responses but download_url may be absent.
-        // Try all known URL field names without making another HTTP request.
-        if (!empty($order['invoices']) && is_array($order['invoices'])) {
-            foreach ($order['invoices'] as $invoice) {
-                if (!empty($invoice['download_url'])) return (string) $invoice['download_url'];
-                if (!empty($invoice['file_url'])) return (string) $invoice['file_url'];
-                if (!empty($invoice['pdf_url'])) return (string) $invoice['pdf_url'];
-                if (!empty($invoice['url'])) return (string) $invoice['url'];
+    public function extractPdfUrlFromLiveOrder(array $order)
+    {
+        $urlFields = array('download_url', 'file_url', 'pdf_url', 'url');
+
+        foreach ((array) ($order['invoices'] ?? array()) as $invoice) {
+            foreach ($urlFields as $f) {
+                $v = trim((string) ($invoice[$f] ?? ''));
+                if ($v !== '') return $v;
+            }
+            $path = trim((string) ($invoice['path'] ?? ''));
+            if ($path !== '') {
+                $w = $this->filesystemPathToWebUrl($path);
+                if ($w !== '') return $w;
+            }
+        }
+
+        foreach ((array) ($order['shipments'] ?? array()) as $shipment) {
+            foreach ((array) ($shipment['invoices'] ?? array()) as $invoice) {
+                foreach ($urlFields as $f) {
+                    $v = trim((string) ($invoice[$f] ?? ''));
+                    if ($v !== '') return $v;
+                }
+                $path = trim((string) ($invoice['path'] ?? ''));
+                if ($path !== '') {
+                    $w = $this->filesystemPathToWebUrl($path);
+                    if ($w !== '') return $w;
+                }
             }
         }
 
         return '';
+    }
+
+    private function extractWooInvoicePdfUrlFromOrder($order)
+    {
+        if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
+        return $this->extractPdfUrlFromLiveOrder($order);
     }
 
     private function gzdPdfUrl($orderId, $order = null)
