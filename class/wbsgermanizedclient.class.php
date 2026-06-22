@@ -139,6 +139,18 @@ class WbsGermanizedClient
     }
 
     /**
+     * Fetch StoreaBill invoices for an order via the SAB REST endpoint.
+     * Returns an array of invoice objects or false.
+     * Each invoice object has a download_url that can be fetched with WC credentials.
+     */
+    public function getStoreaBillInvoices($orderId)
+    {
+        $result = $this->request('/wp-json/sab/v1/invoices/', array('reference_id' => (int) $orderId));
+        if ($result === false || !is_array($result) || empty($result)) return false;
+        return $result;
+    }
+
+    /**
      * Diagnostic probe: returns a structured summary of what is available for a
      * given order — top-level non-standard keys, Germanized document endpoint
      * result, and full document objects. Feed the return value to the setup page
