@@ -1125,6 +1125,23 @@ class WooBankSync
         return (bool) $this->db->query($sql);
     }
 
+    private function findPatternInData($data, $pattern, &$found)
+    {
+        if (is_string($data)) {
+            if ($data !== '' && preg_match($pattern, $data, $m)) {
+                $found = (string) $m[1];
+                return true;
+            }
+            return false;
+        }
+        if (is_array($data)) {
+            foreach ($data as $val) {
+                if ($this->findPatternInData($val, $pattern, $found)) return true;
+            }
+        }
+        return false;
+    }
+
     public function detectStoreaBillFolder()
     {
         $pattern = '#/wp-content/uploads/(storeabill-[a-z0-9]+)/#i';
@@ -1162,60 +1179,36 @@ class WooBankSync
             (string) $this->getConst('WBS_WOO_CONSUMER_KEY', ''),
             (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '')
         );
-        $urlFields = array('download_url', 'file_url', 'pdf_url', 'url');
 
         foreach (array_slice($recentOrders, 0, 5) as $recent) {
             $orderId = (int) ($recent['id'] ?? 0);
             if ($orderId <= 0) continue;
             $orderNum = (string) ($recent['number'] ?? $orderId);
 
-            // 2a: single-order WC REST endpoint — includes the full invoices[] and attachments[] fields
+            // Both URL paths and absolute filesystem paths contain /uploads/storeabill-xxx/
+            $scanPattern = '#/uploads/(storeabill-[a-z0-9]+)/#i';
+            $found = '';
+
+            // 2a: single-order endpoint — recursively scan every string value (invoices, attachments, meta_data, etc.)
             $fullOrder = $gzd->getFullOrder($orderId);
             if ($fullOrder !== false) {
-                // invoices[] — URL fields (download_url etc.)
-                foreach ((array) ($fullOrder['invoices'] ?? array()) as $invoice) {
-                    foreach ($urlFields as $f) {
-                        $url = (string) ($invoice[$f] ?? '');
-                        if (preg_match($pattern, $url, $m)) {
-                            $folder = (string) $m[1];
-                            $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
-                            return array(true, 'Detected from order #' . $orderNum . ' invoices field: ' . $folder);
-                        }
-                    }
-                }
-                // attachments[] — absolute filesystem paths like /var/www/html/wp-content/uploads/storeabill-xxx/...
-                // The /uploads/ segment is present in both URLs and absolute paths
-                $pathPattern = '#/uploads/(storeabill-[a-z0-9]+)/#i';
-                foreach ((array) ($fullOrder['attachments'] ?? array()) as $att) {
-                    foreach (array('path', 'url', 'download_url', 'file') as $f) {
-                        $val = (string) ($att[$f] ?? '');
-                        if ($val === '') continue;
-                        if (preg_match($pathPattern, $val, $m)) {
-                            $folder = (string) $m[1];
-                            $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
-                            return array(true, 'Detected from order #' . $orderNum . ' attachments.path: ' . $folder);
-                        }
-                    }
+                if ($this->findPatternInData($fullOrder, $scanPattern, $found)) {
+                    $this->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                    return array(true, 'Detected from order #' . $orderNum . ' single-order response: ' . $found);
                 }
             }
 
-            // 2b: Germanized-specific document endpoint (gzd-documents / documents)
+            // 2b: Germanized document endpoint — recursively scan the full document objects
             $docs = $gzd->getOrderDocuments($orderId);
             if ($docs !== false) {
-                foreach ((array) $docs as $doc) {
-                    foreach ($urlFields as $f) {
-                        $url = (string) ($doc[$f] ?? '');
-                        if (preg_match($pattern, $url, $m)) {
-                            $folder = (string) $m[1];
-                            $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
-                            return array(true, 'Detected from Germanized document endpoint (order #' . $orderNum . '): ' . $folder);
-                        }
-                    }
+                if ($this->findPatternInData($docs, $scanPattern, $found)) {
+                    $this->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                    return array(true, 'Detected from Germanized document endpoint (order #' . $orderNum . '): ' . $found);
                 }
             }
         }
 
-        return array(false, 'Probed ' . count(array_slice($recentOrders, 0, 5)) . ' recent orders — no StoreaBill URL found. Make sure Germanized Pro has generated at least one invoice. Use the Inspect diagnostic below to see what invoice fields the API returns.');
+        return array(false, 'Probed ' . count(array_slice($recentOrders, 0, 5)) . ' recent orders — no StoreaBill URL found in any response field. Use "Inspect WooCommerce order meta" in Diagnostics to see the raw API response. Then use the PDF download test in the Setup page to test a URL manually.');
     }
 
     public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
