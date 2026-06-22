@@ -1839,11 +1839,14 @@ class WooBankSync
     {
         $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'ecm_files');
         if (empty($fields)) return;
+
+        // Dolibarr ECM: filepath = folder path only, filename = bare filename, fullpath_orig = full relative path
+        $folderPath = ltrim(dirname($relPath), '/\\');
         $label = pathinfo($filename, PATHINFO_FILENAME);
         $data = array();
         $this->addDataIfColumn($data, $fields, 'label', "'" . $this->db->escape($label) . "'", false);
         $this->addDataIfColumn($data, $fields, 'filename', "'" . $this->db->escape($filename) . "'", false);
-        $this->addDataIfColumn($data, $fields, 'filepath', "'" . $this->db->escape($relPath) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'filepath', "'" . $this->db->escape($folderPath) . "'", false);
         $this->addDataIfColumn($data, $fields, 'fullpath_orig', "'" . $this->db->escape($relPath) . "'", false);
         $this->addDataIfColumn($data, $fields, 'fk_parent', (int) $folderId, true);
         $this->addDataIfColumn($data, $fields, 'entity', (int) $this->conf->entity, true);
@@ -1851,11 +1854,20 @@ class WooBankSync
         $this->addDataIfColumn($data, $fields, 'date_c', $this->sqlDateNow(), false);
         $this->addDataIfColumn($data, $fields, 'note', "'" . $this->db->escape('WooBankSync order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
         $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('woobanksync woo ' . $orderId) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'mimetype', "'application/pdf'", false);
         $this->addDataIfColumn($data, $fields, 'status', 1, true);
         $this->addDataIfColumn($data, $fields, 'position', 0, true);
         if (empty($data)) return;
+
         $sql = 'INSERT IGNORE INTO ' . MAIN_DB_PREFIX . 'ecm_files (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
         $this->db->query($sql);
+        // Recount files so the folder count shown in Dolibarr ECM is always accurate
+        $this->db->query(
+            'UPDATE ' . MAIN_DB_PREFIX . 'ecm_directories'
+            . ' SET cachenbofdoc = (SELECT COUNT(*) FROM ' . MAIN_DB_PREFIX . 'ecm_files'
+            . ' WHERE fk_parent=' . (int) $folderId . ' AND entity=' . (int) $this->conf->entity . ')'
+            . ' WHERE rowid=' . (int) $folderId
+        );
     }
 
     private function findOrCreateEcmFolder($label)
