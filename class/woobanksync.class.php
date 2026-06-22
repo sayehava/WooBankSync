@@ -1405,6 +1405,18 @@ class WooBankSync
         $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
         $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
 
+        // StoreaBill/Germanized PDFs are static files in wp-content/uploads.
+        // The download_url often has a query string for tracking or token, but the
+        // bare file path is publicly accessible. Try the clean URL first.
+        $urlPath = (string) @parse_url($url, PHP_URL_PATH);
+        if ($urlPath !== '' && strtolower(substr($urlPath, -4)) === '.pdf' && strpos($url, '?') !== false) {
+            $cleanUrl = (string) strstr($url, '?', true);
+            if ($cleanUrl !== '') {
+                $body = $this->curlGet($cleanUrl, '', '');
+                if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+            }
+        }
+
         // WooCommerce REST download endpoints (/wp-json/) require credentials.
         // Append them as query params, which is the standard WC auth method for downloads.
         if ($key !== '' && $secret !== '' && strpos($url, '/wp-json/') !== false) {
@@ -1414,7 +1426,7 @@ class WooBankSync
             if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
         }
 
-        // Self-authenticated download URLs have an order key embedded — try without credentials.
+        // Self-authenticated download URLs have an order key embedded — try as-is without credentials.
         $body = $this->curlGet($url, '', '');
         if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
 
