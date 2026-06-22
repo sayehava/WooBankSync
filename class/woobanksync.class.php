@@ -1383,7 +1383,14 @@ class WooBankSync
     {
         if (empty($pdfUrl)) return '';
         $folderId = (int) $this->getConst('WBS_DOCUMENT_FOLDER_ID', '0');
-        if ($folderId <= 0) return '';
+        if ($folderId <= 0) {
+            $folderId = (int) $this->findOrCreateEcmFolder('Woo Invoices');
+            if ($folderId > 0) {
+                $this->setConst('WBS_DOCUMENT_FOLDER_ID', (string) $folderId, 'chaine');
+            } else {
+                return '';
+            }
+        }
 
         $sql = 'SELECT relpath, fullpath, filepath FROM ' . MAIN_DB_PREFIX . 'ecm_directories WHERE rowid=' . $folderId . ' AND entity=' . (int) $this->conf->entity;
         $resql = $this->db->query($sql);
