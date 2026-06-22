@@ -1128,70 +1128,78 @@ class WooBankSync
     {
         $pattern = '#/wp-content/uploads/(storeabill-[a-z0-9]+)/#i';
 
-        // Fastest: parse PDF URLs already stored in the local cache table
-        $sql = 'SELECT woo_invoice_pdf_url FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
-            . ' WHERE entity=' . (int) $this->conf->entity
-            . " AND woo_invoice_pdf_url IS NOT NULL AND woo_invoice_pdf_url != '' LIMIT 100";
-        $resql = $this->db->query($sql);
-        if ($resql) {
-            while ($obj = $this->db->fetch_object($resql)) {
-                $url = (string) ($obj->woo_invoice_pdf_url ?? '');
-                if (preg_match($pattern, $url, $m)) {
-                    $folder = (string) $m[1];
-                    $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
-                    return array(true, 'Detected from cached PDF URLs: ' . $folder);
+        // Step 1: parse PDF URLs already stored in the local cache (zero extra HTTP calls)
+        foreach (array(MAIN_DB_PREFIX . 'woobanksync_order_cache', MAIN_DB_PREFIX . 'woobanksync_log') as $table) {
+            $sql = 'SELECT woo_invoice_pdf_url FROM ' . $table
+                . ' WHERE entity=' . (int) $this->conf->entity
+                . " AND woo_invoice_pdf_url IS NOT NULL AND woo_invoice_pdf_url != '' LIMIT 100";
+            $resql = $this->db->query($sql);
+            if ($resql) {
+                while ($obj = $this->db->fetch_object($resql)) {
+                    $url = (string) ($obj->woo_invoice_pdf_url ?? '');
+                    if (preg_match($pattern, $url, $m)) {
+                        $folder = (string) $m[1];
+                        $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
+                        return array(true, 'Detected from cached PDF URLs: ' . $folder);
+                    }
                 }
             }
         }
 
-        // Fallback: also check the sync log table for any stored PDF URLs
-        $sql = 'SELECT woo_invoice_pdf_url FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
-            . ' WHERE entity=' . (int) $this->conf->entity
-            . " AND woo_invoice_pdf_url IS NOT NULL AND woo_invoice_pdf_url != '' LIMIT 100";
-        $resql = $this->db->query($sql);
-        if ($resql) {
-            while ($obj = $this->db->fetch_object($resql)) {
-                $url = (string) ($obj->woo_invoice_pdf_url ?? '');
-                if (preg_match($pattern, $url, $m)) {
-                    $folder = (string) $m[1];
-                    $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
-                    return array(true, 'Detected from sync log PDF URLs: ' . $folder);
-                }
-            }
-        }
-
-        // No cached URLs yet — probe the Germanized document endpoint for one recent order
-        if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) {
-            return array(false, 'No StoreaBill URLs found in cache. Germanized Pro is not enabled so no API probe was attempted. Run Refresh full cache first to populate PDF URLs, then detect again.');
-        }
+        // Step 2: probe WooCommerce — fetch recent orders and check every known URL field
         $client = $this->client();
-        $statuses = $this->csvToArray($this->getConst('WBS_ORDER_STATUSES', 'processing,completed'));
-        $orders = $client->getOrders($statuses, '', 1, 5);
-        if ($orders === false) {
-            return array(false, 'No cached PDF URLs found and WooCommerce request failed: ' . $client->error);
+        $recentOrders = $client->getRecentOrders(5);
+        if ($recentOrders === false) {
+            return array(false, 'No StoreaBill URLs in cache and WooCommerce connection failed: ' . $client->error);
         }
+        if (empty($recentOrders)) {
+            return array(false, 'No StoreaBill URLs in cache and no recent orders found in WooCommerce.');
+        }
+
         $gzd = new WbsGermanizedClient(
             (string) $this->getConst('WBS_WOO_URL', ''),
             (string) $this->getConst('WBS_WOO_CONSUMER_KEY', ''),
             (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '')
         );
-        foreach ($orders as $order) {
-            $orderId = (int) ($order['id'] ?? 0);
+        $urlFields = array('download_url', 'file_url', 'pdf_url', 'url');
+
+        foreach (array_slice($recentOrders, 0, 5) as $recent) {
+            $orderId = (int) ($recent['id'] ?? 0);
             if ($orderId <= 0) continue;
+            $orderNum = (string) ($recent['number'] ?? $orderId);
+
+            // 2a: single-order WC REST endpoint — includes the full invoices[] registered by Germanized Pro
+            $fullOrder = $gzd->getFullOrder($orderId);
+            if ($fullOrder !== false) {
+                foreach ((array) ($fullOrder['invoices'] ?? array()) as $invoice) {
+                    foreach ($urlFields as $f) {
+                        $url = (string) ($invoice[$f] ?? '');
+                        if (preg_match($pattern, $url, $m)) {
+                            $folder = (string) $m[1];
+                            $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
+                            return array(true, 'Detected from order #' . $orderNum . ' invoices field: ' . $folder);
+                        }
+                    }
+                }
+            }
+
+            // 2b: Germanized-specific document endpoint (gzd-documents / documents)
             $docs = $gzd->getOrderDocuments($orderId);
-            if ($docs === false) continue;
-            foreach ((array) $docs as $doc) {
-                foreach (array('download_url', 'file_url', 'pdf_url', 'url') as $field) {
-                    $url = (string) ($doc[$field] ?? '');
-                    if (preg_match($pattern, $url, $m)) {
-                        $folder = (string) $m[1];
-                        $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
-                        return array(true, 'Detected from Germanized document endpoint (order #' . ($order['number'] ?? $orderId) . '): ' . $folder);
+            if ($docs !== false) {
+                foreach ((array) $docs as $doc) {
+                    foreach ($urlFields as $f) {
+                        $url = (string) ($doc[$f] ?? '');
+                        if (preg_match($pattern, $url, $m)) {
+                            $folder = (string) $m[1];
+                            $this->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
+                            return array(true, 'Detected from Germanized document endpoint (order #' . $orderNum . '): ' . $folder);
+                        }
                     }
                 }
             }
         }
-        return array(false, 'Could not detect StoreaBill folder. Run Refresh full cache first to populate PDF URLs, then detect again. Or enter the folder name manually.');
+
+        return array(false, 'Probed ' . count(array_slice($recentOrders, 0, 5)) . ' recent orders — no StoreaBill URL found. Make sure Germanized Pro has generated at least one invoice. Use the Inspect diagnostic below to see what invoice fields the API returns.');
     }
 
     public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl)
