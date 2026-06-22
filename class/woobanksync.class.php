@@ -1421,14 +1421,23 @@ class WooBankSync
 
     private function fetchPdfContent($url)
     {
-        // Germanized Pro download URLs are self-authenticated via an order key embedded
-        // in the URL. Sending Basic auth with consumer credentials breaks these requests.
-        // Try without credentials first, then fall back to Basic auth for REST endpoints.
+        $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+
+        // WooCommerce REST download endpoints (/wp-json/) require credentials.
+        // Append them as query params, which is the standard WC auth method for downloads.
+        if ($key !== '' && $secret !== '' && strpos($url, '/wp-json/') !== false) {
+            $sep = strpos($url, '?') !== false ? '&' : '?';
+            $authUrl = $url . $sep . 'consumer_key=' . urlencode($key) . '&consumer_secret=' . urlencode($secret);
+            $body = $this->curlGet($authUrl, '', '');
+            if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+        }
+
+        // Self-authenticated download URLs have an order key embedded — try without credentials.
         $body = $this->curlGet($url, '', '');
         if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
 
-        $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
-        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        // Last resort: Basic auth header (consumer key:secret).
         if ($key !== '' && $secret !== '') {
             $body = $this->curlGet($url, $key, $secret);
             if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
