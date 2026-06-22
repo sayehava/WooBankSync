@@ -1641,21 +1641,53 @@ class WooBankSync
         $pdfUrlWithAuth = $wooUrl . $pdfPath . '?consumer_key=' . urlencode($key) . '&consumer_secret=' . urlencode($secret);
         $this->pdfLog[] = '[SAB-2] Downloading from: ' . $wooUrl . $pdfPath;
         $body = $this->curlGet($pdfUrlWithAuth, '', '');
-        if ($body !== false && strlen($body) >= 64 && substr($body, 0, 4) === '%PDF') {
-            $this->pdfLog[] = '[SAB-2] OK — got PDF (' . strlen($body) . ' bytes)';
-            return $body;
+        $pdf = $this->decodePdfBody($body);
+        if ($pdf !== false && strlen($pdf) >= 64) {
+            $this->pdfLog[] = '[SAB-2] OK — got PDF (' . strlen($pdf) . ' bytes)';
+            return $pdf;
         }
-        $this->pdfLog[] = '[SAB-2] failed: ' . ($body === false ? 'connection/HTTP error' : 'not a PDF, starts with: ' . substr((string) $body, 0, 80));
+        $this->pdfLog[] = '[SAB-2] failed: ' . ($body === false ? 'connection/HTTP error' : 'not a PDF/base64, starts with: ' . substr((string) $body, 0, 120));
 
         // Retry with Basic auth header
         $this->pdfLog[] = '[SAB-3] Retry with Basic auth header: ' . $wooUrl . $pdfPath;
         $body = $this->curlGet($wooUrl . $pdfPath, $key, $secret);
-        if ($body !== false && strlen($body) >= 64 && substr($body, 0, 4) === '%PDF') {
-            $this->pdfLog[] = '[SAB-3] OK — got PDF (' . strlen($body) . ' bytes)';
-            return $body;
+        $pdf = $this->decodePdfBody($body);
+        if ($pdf !== false && strlen($pdf) >= 64) {
+            $this->pdfLog[] = '[SAB-3] OK — got PDF (' . strlen($pdf) . ' bytes)';
+            return $pdf;
         }
-        $this->pdfLog[] = '[SAB-3] failed: ' . ($body === false ? 'connection/HTTP error' : 'not a PDF, starts with: ' . substr((string) $body, 0, 80));
+        $this->pdfLog[] = '[SAB-3] failed: ' . ($body === false ? 'connection/HTTP error' : 'not a PDF/base64, starts with: ' . substr((string) $body, 0, 120));
 
+        return false;
+    }
+
+    private function decodePdfBody($body)
+    {
+        if ($body === false || !is_string($body) || $body === '') return false;
+        // Already raw binary PDF
+        if (substr($body, 0, 4) === '%PDF') return $body;
+        // JSON response — SAB /pdf endpoint returns {"data":"base64..."} or similar
+        $json = @json_decode($body, true);
+        if (is_array($json)) {
+            foreach (array('data', 'pdf', 'content', 'file', 'base64', 'pdf_data', 'body') as $k) {
+                if (!empty($json[$k]) && is_string($json[$k])) {
+                    $dec = base64_decode($json[$k], true);
+                    if ($dec !== false && substr($dec, 0, 4) === '%PDF') {
+                        $this->pdfLog[] = '  → base64 decoded field "' . $k . '" (' . strlen($dec) . ' bytes)';
+                        return $dec;
+                    }
+                }
+            }
+        }
+        // Raw base64 string as entire body
+        $trimmed = trim($body);
+        if (strlen($trimmed) > 32 && preg_match('/^[A-Za-z0-9+\/\r\n]+=*$/', $trimmed)) {
+            $dec = base64_decode($trimmed, true);
+            if ($dec !== false && substr($dec, 0, 4) === '%PDF') {
+                $this->pdfLog[] = '  → base64 decoded raw body (' . strlen($dec) . ' bytes)';
+                return $dec;
+            }
+        }
         return false;
     }
 
