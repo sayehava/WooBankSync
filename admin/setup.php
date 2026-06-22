@@ -280,6 +280,33 @@ if ($action === 'setup_log_list') {
     exit;
 }
 
+// AJAX: PDF download status per synced order
+if ($action === 'setup_pdf_status') {
+    header('Content-Type: application/json');
+    if (!$user->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit; }
+    // SELECT * so query succeeds even if dynamic columns (woo_invoice_pdf_url, pdf_ecm_filepath) don't exist yet
+    $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        . ' WHERE entity=' . (int) $conf->entity . " AND sync_status='synced'"
+        . ' ORDER BY rowid DESC LIMIT 500';
+    $rows = array();
+    $resql = $db->query($sql);
+    if ($resql) {
+        while ($obj = $db->fetch_object($resql)) {
+            $rows[] = array(
+                'id'      => (string) ($obj->woo_order_id ?? ''),
+                'number'  => (string) ($obj->woo_order_number ?? ''),
+                'invoice' => (string) ($obj->woo_invoice_number ?? ''),
+                'payment' => (string) ($obj->payment_method ?? ''),
+                'date'    => (string) ($obj->date_sync ?? ''),
+                'pdf_url' => (string) ($obj->woo_invoice_pdf_url ?? ''),
+                'pdf_ecm' => (string) ($obj->pdf_ecm_filepath ?? ''),
+            );
+        }
+    }
+    echo json_encode(array('ok' => true, 'rows' => $rows));
+    exit;
+}
+
 // AJAX: list synced orders for cache refresh (called from setup page JS)
 if ($action === 'setup_cache_refresh_list') {
     header('Content-Type: application/json');
@@ -350,6 +377,7 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
  &nbsp; <button class="button" type="button" onclick="wbsSetupOpenLogModal()">View sync log</button>
  &nbsp; <button class="button" type="button" onclick="wbsSetupOpenPdfModal()">&#128196; Download invoice PDFs</button>
  <label title="Force re-download all even if already saved" style="cursor:pointer;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsSetupForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
+ &nbsp; <button class="button" type="button" onclick="wbsSetupOpenPdfStatusModal()" title="See which orders have PDFs saved, URL known, or missing">&#128202; PDF download status</button>
 </div>
 <?php
 
@@ -392,6 +420,32 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
         </tr></thead>
         <tbody id="wbsLogBody"><tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
       </table>
+    </div>
+  </div>
+</div>
+<?php
+
+// ── PDF download status modal ─────────────────────────────────────────────────
+?>
+<div id="wbsPdfStatusModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:6px;width:95%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;">
+    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <b style="flex:1;font-size:1.1em;">&#128202; PDF download status</b>
+      <input type="text" id="wbsPdfStatusSearch" placeholder="Search order #, invoice, payment…" class="flat" style="width:260px;" oninput="wbsSetupFilterPdfStatus()">
+      <label style="font-size:0.85em;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="wbsPdfStatusMissingOnly" onchange="wbsSetupFilterPdfStatus()"> Missing only</label>
+      <span id="wbsPdfStatusCount" style="font-size:0.85em;color:#888;white-space:nowrap;"></span>
+      <button class="button" type="button" onclick="wbsSetupEsc('wbsPdfStatusModal')">Close</button>
+    </div>
+    <div style="overflow:auto;flex:1;">
+      <table class="liste centpercent" style="font-size:0.82em;">
+        <thead><tr class="liste_titre">
+          <th>Date sync</th><th>Order #</th><th>Invoice #</th><th>Payment</th><th style="text-align:center;">PDF status</th><th>ECM path / URL</th>
+        </tr></thead>
+        <tbody id="wbsPdfStatusBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div style="padding:10px 20px;border-top:1px solid #ddd;font-size:0.82em;color:#666;">
+      ✅ = PDF saved locally in Dolibarr ECM &nbsp;&nbsp; &#128196; = URL known, not yet downloaded &nbsp;&nbsp; ❌ = No PDF info (run Download invoice PDFs with Force re-download)
     </div>
   </div>
 </div>
@@ -873,6 +927,52 @@ function wbsSetupFilterLog(){
   });
   if(!rows.length)html='<tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
   document.getElementById("wbsLogBody").innerHTML=html;
+}
+var _wbsPdfStatusAllRows=[];
+function wbsSetupOpenPdfStatusModal(){
+  _wbsPdfStatusAllRows=[];
+  document.getElementById("wbsPdfStatusBody").innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr>';
+  document.getElementById("wbsPdfStatusSearch").value="";
+  document.getElementById("wbsPdfStatusMissingOnly").checked=false;
+  document.getElementById("wbsPdfStatusCount").textContent="";
+  document.getElementById("wbsPdfStatusModal").style.display="flex";
+  var fd=new FormData();fd.append("token",_wbsSetupToken);fd.append("action","setup_pdf_status");
+  fetch(_wbsSetupAjaxUrl,{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){
+    if(!d.ok){document.getElementById("wbsPdfStatusBody").innerHTML='<tr><td colspan="6">Error: '+d.error+'</td></tr>';return;}
+    _wbsPdfStatusAllRows=d.rows||[];
+    wbsSetupFilterPdfStatus();
+  }).catch(function(e){document.getElementById("wbsPdfStatusBody").innerHTML='<tr><td colspan="6">Request failed: '+e+'</td></tr>';});
+}
+function wbsSetupFilterPdfStatus(){
+  var q=(document.getElementById("wbsPdfStatusSearch").value||"").toLowerCase().trim();
+  var missingOnly=document.getElementById("wbsPdfStatusMissingOnly").checked;
+  var rows=_wbsPdfStatusAllRows.filter(function(r){
+    if(missingOnly&&(r.pdf_ecm||r.pdf_url))return false;
+    if(q&&(r.number+r.invoice+r.payment).toLowerCase().indexOf(q)<0)return false;
+    return true;
+  });
+  var saved=_wbsPdfStatusAllRows.filter(function(r){return!!r.pdf_ecm;}).length;
+  var urlOnly=_wbsPdfStatusAllRows.filter(function(r){return!r.pdf_ecm&&!!r.pdf_url;}).length;
+  var missing=_wbsPdfStatusAllRows.length-saved-urlOnly;
+  document.getElementById("wbsPdfStatusCount").textContent=rows.length+" shown  ✅ "+saved+" saved  📄 "+urlOnly+" URL only  ❌ "+missing+" missing";
+  var html="";
+  rows.forEach(function(r,i){
+    var cls=i%2===0?"impair":"pair";
+    var icon,detail;
+    if(r.pdf_ecm){icon='<span title="Saved in Dolibarr ECM" style="color:#090;">✅</span>';detail='<span style="color:#090;font-size:.85em;">'+wbsEsc(r.pdf_ecm)+'</span>';}
+    else if(r.pdf_url){icon='<span title="URL known, not yet downloaded" style="color:#e67e22;">&#128196;</span>';detail='<a href="'+wbsEsc(r.pdf_url)+'" target="_blank" style="font-size:.85em;word-break:break-all;">'+wbsEsc(r.pdf_url)+'</a>';}
+    else{icon='<span title="No PDF info — use Download invoice PDFs with Force re-download" style="color:#c00;">❌</span>';detail='<span style="color:#aaa;font-size:.85em;">—</span>';}
+    html+='<tr class="'+cls+'">';
+    html+='<td style="white-space:nowrap;">'+r.date.substring(0,16)+'</td>';
+    html+='<td>#'+wbsEsc(r.number)+'</td>';
+    html+='<td>'+wbsEsc(r.invoice)+'</td>';
+    html+='<td>'+wbsEsc(r.payment)+'</td>';
+    html+='<td style="text-align:center;">'+icon+'</td>';
+    html+='<td>'+detail+'</td>';
+    html+='</tr>';
+  });
+  if(!rows.length)html='<tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
+  document.getElementById("wbsPdfStatusBody").innerHTML=html;
 }
 </script>
 <?php
