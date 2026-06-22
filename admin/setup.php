@@ -639,10 +639,10 @@ function wbsSetupOpenJsonModal(){
     }
     d.orders.forEach(function(o){
       var opt=document.createElement("option");
-      opt.value=o.woo_order_id;opt.textContent="#"+(o.woo_order_number||o.woo_order_id)+" &mdash; "+o.woo_invoice_number;
+      opt.value=o.id;opt.textContent="#"+(o.number||o.id)+(o.invoice?" — "+o.invoice:"");
       sel.appendChild(opt);
     });
-    wbsSetupShowCachedJson(d.orders[0].woo_order_id);
+    wbsSetupShowCachedJson(d.orders[0].id);
   }).catch(function(e){document.getElementById("wbsSetupJsonPre").textContent="Request failed: "+e;});
 }
 function wbsSetupShowCachedJson(orderId){
