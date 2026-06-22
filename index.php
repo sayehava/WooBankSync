@@ -109,9 +109,9 @@ if ($action === 'download_pdf_single') {
 
     if ($ecmPath !== '') {
         $sync->updateCacheEcmPath((string) $row->woo_order_id, $ecmPath);
-        echo json_encode(array('ok' => true, 'filepath' => $ecmPath));
+        echo json_encode(array('ok' => true, 'filepath' => $ecmPath, 'log' => $sync->pdfLog));
     } else {
-        echo json_encode(array('ok' => false, 'error' => 'Download failed — check PDF URL and folder mapping in Setup'));
+        echo json_encode(array('ok' => false, 'error' => 'Download failed — check PDF URL and folder mapping in Setup', 'log' => $sync->pdfLog));
     }
     exit;
 }
@@ -398,13 +398,14 @@ function wbsDownloadNext(orders, idx, ok, fail) {
         .then(function(res) {
             var icon = document.getElementById('wbs-icon-' + o.id);
             var note = document.getElementById('wbs-note-' + o.id);
+            var logStr = (res.log && res.log.length) ? '\n' + res.log.join('\n') : '';
             if (res.ok) {
                 icon.textContent = res.already ? '✔️' : '✅';
-                note.textContent = res.already ? 'already saved' : 'saved';
+                note.textContent = (res.already ? 'already saved' : 'saved') + logStr;
                 ok++;
             } else {
                 icon.textContent = '❌';
-                note.textContent = res.error || 'failed';
+                note.textContent = (res.error || 'failed') + logStr;
                 fail++;
             }
             wbsDownloadNext(orders, idx + 1, ok, fail);

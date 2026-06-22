@@ -9,6 +9,7 @@ class WooBankSync
     private $conf;
     private $langs;
     public $errors = array();
+    public $pdfLog = array();
 
     public function __construct($db, $conf, $langs)
     {
@@ -1497,40 +1498,59 @@ class WooBankSync
 
     private function fetchPdfContent($url)
     {
+        $this->pdfLog = array();
         $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
         $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
 
-        // StoreaBill/Germanized PDFs are static files in wp-content/uploads.
-        // The download_url often has a query string for tracking or token, but the
-        // bare file path is publicly accessible. Try the clean URL first.
+        // Step 1: StoreaBill static files have query strings for tracking but the bare path is public.
         $urlPath = (string) @parse_url($url, PHP_URL_PATH);
         if ($urlPath !== '' && strtolower(substr($urlPath, -4)) === '.pdf' && strpos($url, '?') !== false) {
             $cleanUrl = (string) strstr($url, '?', true);
             if ($cleanUrl !== '') {
+                $this->pdfLog[] = '[1] bare URL: ' . $cleanUrl;
                 $body = $this->curlGet($cleanUrl, '', '');
-                if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+                if ($body !== false && substr($body, 0, 4) === '%PDF') {
+                    $this->pdfLog[] = '[1] OK — got PDF (' . strlen($body) . ' bytes)';
+                    return $body;
+                }
+                $this->pdfLog[] = '[1] failed: ' . ($body === false ? 'connection error' : substr($body, 0, 80));
             }
         }
 
-        // WooCommerce REST download endpoints (/wp-json/) require credentials.
-        // Append them as query params, which is the standard WC auth method for downloads.
+        // Step 2: WooCommerce REST download endpoints need credentials as URL params.
         if ($key !== '' && $secret !== '' && strpos($url, '/wp-json/') !== false) {
             $sep = strpos($url, '?') !== false ? '&' : '?';
             $authUrl = $url . $sep . 'consumer_key=' . urlencode($key) . '&consumer_secret=' . urlencode($secret);
+            $this->pdfLog[] = '[2] WC REST with credentials: ' . $authUrl;
             $body = $this->curlGet($authUrl, '', '');
-            if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+            if ($body !== false && substr($body, 0, 4) === '%PDF') {
+                $this->pdfLog[] = '[2] OK — got PDF (' . strlen($body) . ' bytes)';
+                return $body;
+            }
+            $this->pdfLog[] = '[2] failed: ' . ($body === false ? 'connection error' : substr($body, 0, 80));
         }
 
-        // Self-authenticated download URLs have an order key embedded — try as-is without credentials.
+        // Step 3: self-authenticated URL (order-key embedded) — try as-is.
+        $this->pdfLog[] = '[3] as-is (no credentials): ' . $url;
         $body = $this->curlGet($url, '', '');
-        if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+        if ($body !== false && substr($body, 0, 4) === '%PDF') {
+            $this->pdfLog[] = '[3] OK — got PDF (' . strlen($body) . ' bytes)';
+            return $body;
+        }
+        $this->pdfLog[] = '[3] failed: ' . ($body === false ? 'connection error' : substr($body, 0, 80));
 
-        // Last resort: Basic auth header (consumer key:secret).
+        // Step 4: Basic auth header.
         if ($key !== '' && $secret !== '') {
+            $this->pdfLog[] = '[4] Basic auth header: ' . $url;
             $body = $this->curlGet($url, $key, $secret);
-            if ($body !== false && substr($body, 0, 4) === '%PDF') return $body;
+            if ($body !== false && substr($body, 0, 4) === '%PDF') {
+                $this->pdfLog[] = '[4] OK — got PDF (' . strlen($body) . ' bytes)';
+                return $body;
+            }
+            $this->pdfLog[] = '[4] failed: ' . ($body === false ? 'connection error' : substr($body, 0, 80));
         }
 
+        $this->pdfLog[] = 'All attempts failed for: ' . $url;
         return false;
     }
 
