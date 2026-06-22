@@ -1548,6 +1548,19 @@ class WooBankSync
     private function fetchPdfContent($url)
     {
         $this->pdfLog = array();
+
+        // Convert filesystem path to web URL if the stored value is not an HTTP URL
+        if (!preg_match('#^https?://#i', $url)) {
+            $converted = $this->filesystemPathToWebUrl($url);
+            if ($converted !== '') {
+                $this->pdfLog[] = '[0] filesystem path converted to web URL: ' . $converted;
+                $url = $converted;
+            } else {
+                $this->pdfLog[] = '[0] value is not an HTTP URL and WooCommerce base URL is not configured: ' . $url;
+                return false;
+            }
+        }
+
         $key = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
         $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
 
