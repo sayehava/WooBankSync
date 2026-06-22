@@ -1211,6 +1211,11 @@ class WooBankSync
         return array(false, 'Probed ' . count(array_slice($recentOrders, 0, 5)) . ' recent orders — no StoreaBill URL found in any response field. Use "Inspect WooCommerce order meta" in Diagnostics to see the raw API response. Then use the PDF download test in the Setup page to test a URL manually.');
     }
 
+    public function testFetchPdfUrl($url)
+    {
+        return $this->fetchPdfContent((string) $url);
+    }
+
     public function downloadInvoicePdfPublic($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force = false)
     {
         return $this->downloadAndStoreInvoicePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $force);
