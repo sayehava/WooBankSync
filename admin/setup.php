@@ -197,6 +197,21 @@ if ($action === 'diagnose_meta') {
     }
 }
 
+if ($action === 'detect_storeabill') {
+    list($ok, $msg) = $sync->detectStoreaBillFolder();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'save_storeabill') {
+    $folder = trim(GETPOST('WBS_STOREABILL_FOLDER', 'restricthtml'));
+    if ($folder !== '' && !preg_match('/^storeabill-[a-z0-9]+$/i', $folder)) {
+        setEventMessages('Invalid folder name. Expected format: storeabill-xxxxxxxx (only lowercase letters and digits after the dash).', null, 'errors');
+    } else {
+        wbs_set_const_safe($db, 'WBS_STOREABILL_FOLDER', $folder, 'chaine', 0, '', $conf->entity);
+        setEventMessages($folder !== '' ? 'StoreaBill folder saved: ' . $folder : 'StoreaBill folder cleared.', null, 'mesgs');
+    }
+}
+
 if ($action === 'desync') {
     if (GETPOST('confirm_desync', 'alpha') !== 'yes') {
         setEventMessages('Desync was not confirmed.', null, 'errors');
@@ -404,6 +419,45 @@ if ($mappedFolderId !== '') {
 </form>
 <?php
 
+
+if ($gzdEnabled) {
+    $storeabillFolder = (string) ($conf->global->WBS_STOREABILL_FOLDER ?? '');
+?>
+<br><table class="noborder centpercent">
+<tr class="liste_titre"><td colspan="2">StoreaBill PDF directory</td></tr>
+<tr><td class="titlefield">Detected folder</td><td>
+<?php
+    if ($storeabillFolder !== '') {
+?>
+<code><?php echo dol_escape_htmltag($storeabillFolder); ?></code> <span style="color:green;">&#10003; detected</span>
+<?php
+    } else {
+?>
+<span class="opacitymedium">Not detected yet.</span>
+<?php
+    }
+?>
+</td></tr>
+<tr><td class="titlefield">Auto-detect</td><td>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>">
+<input type="hidden" name="action" value="detect_storeabill">
+<input class="button" type="submit" value="Detect StoreaBill folder">
+</form>
+<br><span class="opacitymedium">Reads PDF URLs stored in the local cache. If none found, probes the Germanized document endpoint for one recent order. Run Refresh full cache first if you have no PDF URLs yet.</span>
+</td></tr>
+<tr><td class="titlefield">Manual override</td><td>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;" onsubmit="return confirm('Changing the StoreaBill folder name manually may break PDF downloads if the value does not match your WooCommerce installation. Continue?');">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>">
+<input type="hidden" name="action" value="save_storeabill">
+<input class="flat" type="text" name="WBS_STOREABILL_FOLDER" value="<?php echo dol_escape_htmltag($storeabillFolder); ?>" placeholder="storeabill-xxxxxxxx" style="width:220px;">
+ <input class="button" type="submit" value="Save">
+</form>
+<br><span style="color:#c05000;font-size:0.88em;">&#9888; Warning: changing this manually may break PDF downloads if the folder name does not match your WooCommerce installation.</span>
+</td></tr>
+</table>
+<?php
+}
 
 $diagData = $sync->getJsonConst('WBS_META_DIAG_JSON', array());
 $diagJson = !empty($diagData) ? json_encode($diagData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
