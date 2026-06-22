@@ -228,7 +228,6 @@ if ($resql) {
 <script>
 var _wbsAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
 var _wbsToken   = <?php echo json_encode(newToken()); ?>;
-var _wbsSyncMaxPages = <?php echo max(1, min(100, (int) ($conf->global->WBS_MANUAL_SYNC_PAGES ?? 5))); ?>;
 
 function wbsOpenSyncModal() {
     document.getElementById('wbsSyncModal').style.display = 'flex';
@@ -240,8 +239,7 @@ function wbsOpenSyncModal() {
 }
 
 function wbsRunSyncBatch(page, imported, skipped, errors) {
-    document.getElementById('wbsSyncStatus').textContent = 'Processing batch ' + page + ' of at most ' + _wbsSyncMaxPages + '…';
-    document.getElementById('wbsSyncBar').style.width = Math.round(((page - 1) / _wbsSyncMaxPages) * 100) + '%';
+    document.getElementById('wbsSyncStatus').textContent = 'Processing batch ' + page + '…';
     var body = 'action=sync_batch&page=' + page + '&token=' + encodeURIComponent(_wbsToken);
     fetch(_wbsAjaxUrl, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body})
         .then(function(r) { return r.json(); })
@@ -260,7 +258,7 @@ function wbsRunSyncBatch(page, imported, skipped, errors) {
                 list.appendChild(row);
             });
             list.scrollTop = list.scrollHeight;
-            if (result.has_more && page < _wbsSyncMaxPages) {
+            if (result.has_more && page < 500) {
                 wbsRunSyncBatch(page + 1, imported, skipped, errors);
                 return;
             }
