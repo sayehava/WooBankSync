@@ -93,7 +93,7 @@ class WooBankSync
         $currency = isset($order['currency']) ? (string) $order['currency'] : 'EUR';
         $dateOrder = $this->wooDateToSql($order['date_paid'] ?? ($order['date_created'] ?? null));
         $invoiceNumber = $this->extractWooInvoiceNumber($order);
-        $pdfUrl = $this->extractWooInvoicePdfUrl($order);
+        $pdfUrl = $this->extractWooInvoicePdfUrlFromOrder($order);
         $orderStatus = isset($order['status']) ? (string) $order['status'] : '';
 
         if ($this->isOrderSynced($orderId)) {
