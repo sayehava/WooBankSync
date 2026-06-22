@@ -10,6 +10,7 @@ class WooBankSync
     private $langs;
     public $errors = array();
     public $pdfLog = array();
+    public $lastSabInvoiceNumber = '';
 
     public function __construct($db, $conf, $langs)
     {
@@ -1574,6 +1575,69 @@ class WooBankSync
 
         $this->registerEcmFile($folderId, $filename, $ecmRelPath, $orderId, $invoiceNumber);
         return $ecmRelPath;
+    }
+
+    private function fetchStoreaBillPdf($orderId)
+    {
+        $wooUrl = rtrim((string) $this->getConst('WBS_WOO_URL', ''), '/');
+        $key    = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        if ($wooUrl === '' || $key === '' || $secret === '') return false;
+
+        $gzd = new WbsGermanizedClient($wooUrl, $key, $secret);
+        $this->pdfLog[] = '[SAB-1] Calling /wp-json/sab/v1/invoices/?reference_id=' . (int) $orderId;
+        $invoices = $gzd->getStoreaBillInvoices((int) $orderId);
+        if ($invoices === false) {
+            $this->pdfLog[] = '[SAB-1] endpoint failed or returned no data: ' . $gzd->error;
+            return false;
+        }
+
+        $downloadUrl = '';
+        $invoiceNumber = '';
+        $list = isset($invoices[0]) ? $invoices : array_values($invoices);
+        foreach ($list as $item) {
+            if (!is_array($item)) continue;
+            foreach (array('download_url', 'file_url', 'url') as $f) {
+                if (!empty($item[$f])) { $downloadUrl = (string) $item[$f]; break; }
+            }
+            if ($downloadUrl !== '' && empty($invoiceNumber)) {
+                foreach (array('formatted_number', 'number', 'document_number') as $nf) {
+                    if (!empty($item[$nf])) { $invoiceNumber = (string) $item[$nf]; break; }
+                }
+            }
+            if ($downloadUrl !== '') break;
+        }
+
+        if ($downloadUrl === '') {
+            $this->pdfLog[] = '[SAB-1] No download_url in SAB response (' . count($list) . ' item(s) returned)';
+            return false;
+        }
+        $this->pdfLog[] = '[SAB-1] Got download URL: ' . $downloadUrl;
+
+        // Store the invoice number so caller can use it for the filename
+        $this->lastSabInvoiceNumber = $invoiceNumber;
+
+        // Try with WC credentials appended (SAB download endpoints require WC auth)
+        $sep = strpos($downloadUrl, '?') !== false ? '&' : '?';
+        $authUrl = $downloadUrl . $sep . 'consumer_key=' . urlencode($key) . '&consumer_secret=' . urlencode($secret);
+        $this->pdfLog[] = '[SAB-2] Downloading with WC credentials: ' . $authUrl;
+        $body = $this->curlGet($authUrl, '', '');
+        if ($body !== false && strlen($body) >= 64 && substr($body, 0, 4) === '%PDF') {
+            $this->pdfLog[] = '[SAB-2] OK — got PDF (' . strlen($body) . ' bytes)';
+            return $body;
+        }
+        $this->pdfLog[] = '[SAB-2] failed: ' . ($body === false ? 'connection/HTTP error' : 'not a PDF, starts with: ' . substr((string) $body, 0, 80));
+
+        // Try with Basic auth header
+        $this->pdfLog[] = '[SAB-3] Downloading with Basic auth: ' . $downloadUrl;
+        $body = $this->curlGet($downloadUrl, $key, $secret);
+        if ($body !== false && strlen($body) >= 64 && substr($body, 0, 4) === '%PDF') {
+            $this->pdfLog[] = '[SAB-3] OK — got PDF (' . strlen($body) . ' bytes)';
+            return $body;
+        }
+        $this->pdfLog[] = '[SAB-3] failed: ' . ($body === false ? 'connection/HTTP error' : 'not a PDF, starts with: ' . substr((string) $body, 0, 80));
+
+        return false;
     }
 
     private function fetchPdfContent($url)
