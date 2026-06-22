@@ -19,69 +19,6 @@ if ($action === 'pending_pdfs') {
     exit;
 }
 
-// ── AJAX: return the full WooCommerce order JSON stored in the local cache ──
-if ($action === 'cached_order_json') {
-    header('Content-Type: application/json');
-    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
-        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
-    }
-    $sync = new WooBankSync($db, $conf, $langs);
-    echo json_encode(array('ok' => true, 'orders' => $sync->getCachedOrderJsonRows()));
-    exit;
-}
-
-// ── AJAX: return one cached WooCommerce order JSON record ──
-if ($action === 'cached_order_json_item') {
-    header('Content-Type: application/json');
-    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
-        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
-    }
-    $wooOrderId = GETPOST('woo_order_id', 'alphanohtml');
-    if ($wooOrderId === '') {
-        echo json_encode(array('ok' => false, 'error' => 'Missing order ID')); exit;
-    }
-    $sync = new WooBankSync($db, $conf, $langs);
-    $rawJson = $sync->getCachedOrderJson($wooOrderId);
-    if ($rawJson === null) {
-        echo json_encode(array('ok' => false, 'error' => 'Cached JSON not found')); exit;
-    }
-    echo json_encode(array('ok' => true, 'json' => $rawJson));
-    exit;
-}
-
-// ── AJAX: list synced orders for the paginated full-cache refresh ──
-if ($action === 'full_cache_refresh_list') {
-    header('Content-Type: application/json');
-    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
-        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
-    }
-    $sync = new WooBankSync($db, $conf, $langs);
-    echo json_encode(array(
-        'ok' => true,
-        'orders' => $sync->getFullCacheRefreshOrders(),
-        'germanized_enabled' => !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED),
-        'batch_size' => max(1, min(100, (int) ($conf->global->WBS_CACHE_BATCH_SIZE ?? 1))),
-    ));
-    exit;
-}
-
-// ── AJAX: refresh and merge one batch of full Woo/Germanized cache data ──
-if ($action === 'full_cache_refresh_batch') {
-    header('Content-Type: application/json');
-    if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
-        echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit;
-    }
-    $rawIds = GETPOST('order_ids', 'restricthtml');
-    $orderIds = preg_split('/[^0-9]+/', (string) $rawIds, -1, PREG_SPLIT_NO_EMPTY);
-    if (empty($orderIds)) {
-        echo json_encode(array('ok' => false, 'error' => 'No order IDs supplied')); exit;
-    }
-    @set_time_limit(300);
-    $sync = new WooBankSync($db, $conf, $langs);
-    echo json_encode(array('ok' => true, 'result' => $sync->refreshFullCacheBatch($orderIds)));
-    exit;
-}
-
 // ── AJAX: synchronize one configured page of WooCommerce orders ──
 if ($action === 'sync_batch') {
     header('Content-Type: application/json');
@@ -188,8 +125,6 @@ llxHeader('', $langs->trans('WooBankSync'));
 <button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
 <button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:10px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
 <button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs using URLs already stored locally — no WooCommerce API call">&#128196; Download past invoice PDFs</button>
- <button class="button" type="button" onclick="wbsOpenCacheRefreshModal()" title="Fetch all Woo order data in configured batches and merge it into the local JSON cache">&#8635; Refresh full cache</button>
- <button class="button" type="button" onclick="wbsOpenJsonModal()" title="View the full WooCommerce order responses stored in the local cache">{ } View cached Woo JSON</button>
 <br>
 <?php
 
@@ -270,27 +205,6 @@ if ($resql) {
   </div>
 </div>
 
-<div id="wbsCacheRefreshModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10002;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:6px;width:84%;max-width:900px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
-    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
-      <strong>&#8635; Refresh full Woo data cache</strong>
-      <span onclick="document.getElementById('wbsCacheRefreshModal').style.display='none';" style="cursor:pointer;font-size:22px;line-height:1;color:#666;">&times;</span>
-    </div>
-    <div style="padding:14px 20px 10px;">
-      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;">
-        <div id="wbsCacheRefreshBar" style="width:0%;height:10px;background:#2684ff;border-radius:4px;transition:width 0.4s ease;"></div>
-      </div>
-      <div id="wbsCacheRefreshStatus" style="margin-top:7px;color:#555;">Preparing&hellip;</div>
-      <div id="wbsCacheRefreshMode" class="opacitymedium" style="margin-top:3px;"></div>
-    </div>
-    <div id="wbsCacheRefreshList" style="flex:1;overflow-y:auto;padding:4px 20px 12px;font-size:0.9em;"></div>
-    <div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:10px;align-items:center;">
-      <button id="wbsCacheRefreshClose" class="button" style="display:none;" onclick="document.getElementById('wbsCacheRefreshModal').style.display='none';">Close</button>
-      <span id="wbsCacheRefreshSummary" style="color:#666;"></span>
-    </div>
-  </div>
-</div>
-
 <div id="wbsSyncModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10003;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:84%;max-width:900px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
     <div style="padding:14px 20px;border-bottom:1px solid #ddd;"><strong>&#8635; Sync WooCommerce orders</strong></div>
@@ -312,24 +226,6 @@ if ($resql) {
     </div>
     <div id="wbsDifferenceList" style="flex:1;overflow-y:auto;padding:4px 20px 12px;font-size:0.9em;"></div>
     <div style="padding:12px 20px;border-top:1px solid #ddd;"><button id="wbsDifferenceClose" class="button" style="display:none;" onclick="location.reload();">Close and refresh</button> <span id="wbsDifferenceSummary"></span></div>
-  </div>
-</div>
-
-<div id="wbsJsonModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10001;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:6px;width:90%;max-width:1100px;height:86vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
-    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
-      <strong>{ } Cached WooCommerce order JSON</strong>
-      <span onclick="document.getElementById('wbsJsonModal').style.display='none';" style="cursor:pointer;font-size:22px;line-height:1;color:#666;">&times;</span>
-    </div>
-    <div style="padding:12px 20px;border-bottom:1px solid #ddd;">
-      <label for="wbsJsonOrder"><strong>Order:</strong></label>
-      <select id="wbsJsonOrder" class="flat" style="min-width:320px;margin-left:8px;" onchange="wbsShowCachedJson(this.value)"></select>
-      <span id="wbsJsonStatus" style="margin-left:12px;color:#666;"></span>
-    </div>
-    <pre id="wbsJsonContent" style="flex:1;overflow:auto;margin:0;padding:16px 20px;background:#1e1e1e;color:#d4d4d4;font:13px/1.45 monospace;white-space:pre-wrap;word-break:break-word;"></pre>
-    <div style="padding:10px 20px;border-top:1px solid #ddd;text-align:right;">
-      <button class="button" type="button" onclick="document.getElementById('wbsJsonModal').style.display='none';">Close</button>
-    </div>
   </div>
 </div>
 
@@ -440,146 +336,6 @@ function wbsRunDifferenceBatch(orders, batchSize, offset, updated, unchanged, er
             errors += batch.length;
             document.getElementById('wbsDifferenceList').textContent += '❌ ' + error.message + '\n';
             wbsRunDifferenceBatch(orders, batchSize, offset + batch.length, updated, unchanged, errors);
-        });
-}
-
-function wbsOpenCacheRefreshModal() {
-    var modal = document.getElementById('wbsCacheRefreshModal');
-    modal.style.display = 'flex';
-    document.getElementById('wbsCacheRefreshBar').style.width = '0%';
-    document.getElementById('wbsCacheRefreshStatus').textContent = 'Loading synced order list…';
-    document.getElementById('wbsCacheRefreshMode').textContent = '';
-    document.getElementById('wbsCacheRefreshList').innerHTML = '';
-    document.getElementById('wbsCacheRefreshSummary').textContent = '';
-    document.getElementById('wbsCacheRefreshClose').style.display = 'none';
-
-    fetch(_wbsAjaxUrl + '?action=full_cache_refresh_list&token=' + encodeURIComponent(_wbsToken))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (!data.ok) throw new Error(data.error || 'Could not load order list');
-            var orders = data.orders || [];
-            var batchSize = data.batch_size || 1;
-            document.getElementById('wbsCacheRefreshMode').textContent = data.germanized_enabled
-                ? 'Germanized integration is enabled: Woo order data and Germanized documents will be merged.'
-                : 'Germanized integration is disabled: only WooCommerce order data will be requested.';
-            if (orders.length === 0) {
-                document.getElementById('wbsCacheRefreshStatus').textContent = 'No synced orders found.';
-                document.getElementById('wbsCacheRefreshClose').style.display = 'inline-block';
-                return;
-            }
-            wbsRefreshCacheBatch(orders, batchSize, 0, 0, 0);
-        })
-        .catch(function(error) {
-            document.getElementById('wbsCacheRefreshStatus').textContent = 'Error: ' + error.message;
-            document.getElementById('wbsCacheRefreshClose').style.display = 'inline-block';
-        });
-}
-
-function wbsRefreshCacheBatch(orders, batchSize, offset, updated, errors) {
-    var total = orders.length;
-    if (offset >= total) {
-        document.getElementById('wbsCacheRefreshBar').style.width = '100%';
-        document.getElementById('wbsCacheRefreshStatus').textContent = 'Full cache refresh completed.';
-        document.getElementById('wbsCacheRefreshSummary').textContent = '✅ ' + updated + ' updated   ❌ ' + errors + ' errors';
-        document.getElementById('wbsCacheRefreshClose').style.display = 'inline-block';
-        return;
-    }
-
-    var batch = orders.slice(offset, offset + batchSize);
-    var batchNumber = Math.floor(offset / batchSize) + 1;
-    var batchCount = Math.ceil(total / batchSize);
-    document.getElementById('wbsCacheRefreshBar').style.width = Math.round((offset / total) * 100) + '%';
-    document.getElementById('wbsCacheRefreshStatus').textContent = 'Batch ' + batchNumber + ' / ' + batchCount + ' — refreshing orders ' + (offset + 1) + '–' + Math.min(offset + batch.length, total) + ' of ' + total + '…';
-
-    var list = document.getElementById('wbsCacheRefreshList');
-    list.innerHTML = '';
-    batch.forEach(function(order) {
-        var row = document.createElement('div');
-        row.id = 'wbs-cache-row-' + order.id;
-        row.style.cssText = 'padding:8px 0;border-bottom:1px solid #eee;display:flex;gap:10px;';
-        row.innerHTML = '<span id="wbs-cache-icon-' + order.id + '">⏳</span><span>#' + wbsEsc(order.number) + '</span><span id="wbs-cache-note-' + order.id + '" class="opacitymedium"></span>';
-        list.appendChild(row);
-    });
-
-    var ids = batch.map(function(order) { return order.id; }).join(',');
-    var body = 'action=full_cache_refresh_batch&order_ids=' + encodeURIComponent(ids) + '&token=' + encodeURIComponent(_wbsToken);
-    fetch(_wbsAjaxUrl, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:body})
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (!data.ok) throw new Error(data.error || 'Batch failed');
-            var result = data.result || {};
-            if (result.error) throw new Error(result.error);
-            (result.items || []).forEach(function(item) {
-                var icon = document.getElementById('wbs-cache-icon-' + item.id);
-                var note = document.getElementById('wbs-cache-note-' + item.id);
-                if (icon) icon.textContent = item.ok ? '✅' : '❌';
-                if (note) note.textContent = item.ok ? (item.germanized ? 'Woo + Germanized merged' : 'Woo data merged') : (item.message || 'failed');
-            });
-            wbsRefreshCacheBatch(orders, batchSize, offset + batch.length, updated + (result.updated || 0), errors + (result.errors || 0));
-        })
-        .catch(function(error) {
-            batch.forEach(function(order) {
-                var icon = document.getElementById('wbs-cache-icon-' + order.id);
-                var note = document.getElementById('wbs-cache-note-' + order.id);
-                if (icon) icon.textContent = '❌';
-                if (note) note.textContent = error.message;
-            });
-            wbsRefreshCacheBatch(orders, batchSize, offset + batch.length, updated, errors + batch.length);
-        });
-}
-
-function wbsOpenJsonModal() {
-    var modal = document.getElementById('wbsJsonModal');
-    var select = document.getElementById('wbsJsonOrder');
-    modal.style.display = 'flex';
-    select.innerHTML = '';
-    select.disabled = true;
-    document.getElementById('wbsJsonStatus').textContent = 'Loading cache…';
-    document.getElementById('wbsJsonContent').textContent = '';
-
-    fetch(_wbsAjaxUrl + '?action=cached_order_json&token=' + encodeURIComponent(_wbsToken))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (!data.ok) throw new Error(data.error || 'Could not read cache');
-            var orders = data.orders || [];
-            if (orders.length === 0) {
-                document.getElementById('wbsJsonStatus').textContent = 'No full order JSON is cached yet.';
-                document.getElementById('wbsJsonContent').textContent = 'Run/update database checks in Setup, then use Refresh full cache to populate the JSON cache.';
-                return;
-            }
-            orders.forEach(function(order) {
-                var option = document.createElement('option');
-                option.value = order.id;
-                option.textContent = '#' + order.number + (order.invoice ? ' — ' + order.invoice : '') + (order.date_updated ? ' — ' + order.date_updated : '');
-                select.appendChild(option);
-            });
-            select.disabled = false;
-            document.getElementById('wbsJsonStatus').textContent = orders.length + ' cached orders';
-            wbsShowCachedJson(select.value);
-        })
-        .catch(function(error) {
-            document.getElementById('wbsJsonStatus').textContent = 'Error';
-            document.getElementById('wbsJsonContent').textContent = error.message;
-        });
-}
-
-function wbsShowCachedJson(orderId) {
-    if (!orderId) return;
-    document.getElementById('wbsJsonContent').textContent = 'Loading order JSON…';
-    fetch(_wbsAjaxUrl + '?action=cached_order_json_item&woo_order_id=' + encodeURIComponent(orderId) + '&token=' + encodeURIComponent(_wbsToken))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (!data.ok) throw new Error(data.error || 'Could not read cached JSON');
-            var output = data.json || '';
-            try {
-                output = JSON.stringify(JSON.parse(output), null, 2);
-            } catch (e) {
-                // Keep the stored value visible even if it is not valid JSON.
-            }
-            document.getElementById('wbsJsonContent').textContent = output;
-        })
-        .catch(function(error) {
-            document.getElementById('wbsJsonContent').textContent = error.message;
         });
 }
 
