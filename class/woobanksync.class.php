@@ -1484,15 +1484,14 @@ class WooBankSync
         if (!is_dir($dir) && !@mkdir($dir, 0775, true)) return '';
 
         $safe = static function ($s) { return preg_replace('/[^a-zA-Z0-9\-_]/', '-', trim((string) $s)); };
-        $filename = 'woo-' . $safe($orderNumber) . ($invoiceNumber !== '' ? '-' . $safe($invoiceNumber) : '') . '.pdf';
+        $ts = time();
+        $filename = 'woo-' . $safe($orderNumber) . ($invoiceNumber !== '' ? '-' . $safe($invoiceNumber) : '') . '-dld-' . $ts . '.pdf';
         $filepath = $dir . '/' . $filename;
         $ecmRelPath = $relpath . '/' . $filename;
 
-        if (!file_exists($filepath)) {
-            $content = $this->fetchPdfContent($pdfUrl);
-            if ($content === false || strlen($content) < 64) return '';
-            if (file_put_contents($filepath, $content) === false) return '';
-        }
+        $content = $this->fetchPdfContent($pdfUrl);
+        if ($content === false || strlen($content) < 64) return '';
+        if (file_put_contents($filepath, $content) === false) return '';
 
         $this->registerEcmFile($folderId, $filename, $ecmRelPath, $orderId, $invoiceNumber);
         return $ecmRelPath;
