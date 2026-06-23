@@ -298,30 +298,6 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
 <input class="button" type="submit" value="Run/update database checks without disabling module">
 </form>
  &nbsp; <button class="button" type="button" onclick="wbsSetupOpenLogModal()">View sync log</button>
- &nbsp; <button class="button" type="button" onclick="wbsSetupOpenPdfModal()">&#128196; Download invoice PDFs</button>
- <label title="Force re-download all even if already saved" style="cursor:pointer;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsSetupForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
- &nbsp; <button class="button" type="button" onclick="wbsSetupOpenPdfStatusModal()" title="See which orders have PDFs saved, URL known, or missing">&#128202; PDF download status</button>
-</div>
-<?php
-
-// ── PDF download modal (calls index.php AJAX — token valid for same session) ─
-?>
-<div id="wbsSetupPdfModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9998;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:6px;width:82%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.28);">
-    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
-      <strong>&#128196; Download past invoice PDFs</strong>
-      <span onclick="wbsSetupEsc('wbsSetupPdfModal')" style="cursor:pointer;font-size:22px;color:#666;">&times;</span>
-    </div>
-    <div style="padding:14px 20px 10px;">
-      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;"><div id="wbsSetupPdfBar" style="width:0%;height:10px;background:#28a745;border-radius:4px;transition:width .4s;"></div></div>
-      <div id="wbsSetupPdfStatus" style="margin-top:6px;font-size:.88em;color:#555;">Preparing&hellip;</div>
-    </div>
-    <div id="wbsSetupPdfList" style="flex:1;overflow-y:auto;padding:4px 20px 10px;font-size:.9em;"></div>
-    <div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:10px;align-items:center;">
-      <button id="wbsSetupPdfDoneBtn" class="button" style="display:none;" onclick="wbsSetupEsc('wbsSetupPdfModal')">Close</button>
-      <span id="wbsSetupPdfSummary" style="font-size:.88em;color:#666;"></span>
-    </div>
-  </div>
 </div>
 <?php
 
@@ -346,34 +322,6 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
     </div>
   </div>
 </div>
-<?php
-
-// ── PDF download status modal ─────────────────────────────────────────────────
-?>
-<div id="wbsPdfStatusModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:6px;width:95%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;">
-    <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <b style="flex:1;font-size:1.1em;">&#128202; PDF download status</b>
-      <input type="text" id="wbsPdfStatusSearch" placeholder="Search order #, invoice, payment…" class="flat" style="width:260px;" oninput="wbsSetupFilterPdfStatus()">
-      <label style="font-size:0.85em;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="wbsPdfStatusMissingOnly" onchange="wbsSetupFilterPdfStatus()"> Missing only</label>
-      <span id="wbsPdfStatusCount" style="font-size:0.85em;color:#888;white-space:nowrap;"></span>
-      <button class="button" type="button" onclick="wbsSetupEsc('wbsPdfStatusModal')">Close</button>
-    </div>
-    <div style="overflow:auto;flex:1;">
-      <table class="liste centpercent" style="font-size:0.82em;">
-        <thead><tr class="liste_titre">
-          <th>Date sync</th><th>Order #</th><th>Invoice #</th><th>Payment</th><th style="text-align:center;">PDF status</th><th>ECM path / URL</th>
-        </tr></thead>
-        <tbody id="wbsPdfStatusBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div style="padding:10px 20px;border-top:1px solid #ddd;font-size:0.82em;color:#666;">
-      ✅ = PDF saved locally in Dolibarr ECM &nbsp;&nbsp; &#128196; = URL known, not yet downloaded &nbsp;&nbsp; ❌ = No PDF info (run Download invoice PDFs with Force re-download)
-    </div>
-  </div>
-</div>
-<?php
-
 ?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
@@ -492,82 +440,7 @@ if (empty($gateways)) {
 </form><br>
 <?php
 
-$gzdEnabled = !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED);
-$labelEnabled = !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED);
-$extraEnabled = !empty($conf->global->WBS_BANK_EXTRAFIELD_ENABLED);
-$pdfDownloadEnabled = !empty($conf->global->WBS_PDF_DOWNLOAD_ENABLED);
-$mappedBankExtraField = (string) ($conf->global->WBS_BANK_EXTRAFIELD_CODE ?? '');
-$mappedFolderId = (string) ($conf->global->WBS_DOCUMENT_FOLDER_ID ?? '');
-$bankExtraFields = $sync->getBankExtraFields();
-?>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>">
-<input type="hidden" name="action" value="save_invoice">
-<table class="noborder centpercent">
-<tr class="liste_titre"><td colspan="2">WooCommerce invoice reference</td></tr>
-<tr><td class="titlefield">Germanized Pro integration</td><td>
-<label><input type="checkbox" id="wbsGzdToggle" name="WBS_GERMANIZED_PRO_ENABLED" value="1"<?php echo $gzdEnabled ? ' checked' : ''; ?> onchange="document.getElementById('wbsGzdSub').style.display=this.checked?'table-row-group':'none';">
- Enable Germanized Pro invoice extraction</label>
-<br><span class="opacitymedium">Reads invoice number from <code>invoices[0].formatted_number</code> in the WooCommerce order response (StoreaBill / Germanized Pro).</span>
-</td></tr></table>
-<table class="noborder centpercent" id="wbsGzdSub" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
-<tr><td class="titlefield">Add invoice number to label</td><td>
-<label><input type="checkbox" name="WBS_DOCUMENT_SYNC_ENABLED" value="1"<?php echo $labelEnabled ? ' checked' : ''; ?>>
- Append invoice number to bank entry label (title)</label>
-</td></tr>
-<tr><td class="titlefield">Store in a custom field</td><td>
-<label><input type="checkbox" name="WBS_BANK_EXTRAFIELD_ENABLED" value="1"<?php echo $extraEnabled ? ' checked' : ''; ?>>
- Also write the invoice number into a mapped bank-entry custom field</label>
-</td></tr>
-<tr><td class="titlefield">Bank-entry custom field</td><td>
-<select class="flat minwidth300" name="WBS_BANK_EXTRAFIELD_CODE"><option value="">-- not mapped --</option>
-<?php
-foreach ($bankExtraFields as $code => $fieldLabel) {
-?>
-<option value="<?php echo dol_escape_htmltag($code); ?>"<?php echo $code === $mappedBankExtraField ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($fieldLabel . ' (' . $code . ')'); ?></option>
-<?php
-}
-?>
-</select>
-<br><span class="opacitymedium">Select an existing Dolibarr bank-entry custom field, or use the button below to create and map one automatically.</span>
-</td></tr>
-<tr><td class="titlefield">Download PDF invoices during sync</td><td>
-<label><input type="checkbox" name="WBS_PDF_DOWNLOAD_ENABLED" value="1"<?php echo $pdfDownloadEnabled ? ' checked' : ''; ?>>
- Automatically download and save invoice PDFs to the mapped Dolibarr folder during sync</label>
-<br><span class="opacitymedium">Requires a mapped folder below. Each synced order will trigger one extra HTTP request to fetch the PDF. A clickable download link will appear in the sync log.</span>
-</td></tr>
-<tr><td class="titlefield">Invoice PDF document folder</td><td>
-<?php echo wbs_ecm_folder_select('WBS_DOCUMENT_FOLDER_ID', $mappedFolderId); ?>
-<br><span class="opacitymedium">ECM folder where Woo invoice PDFs will be stored. Select an existing folder, or use the button below to create and map one automatically.</span>
-</td></tr>
-</table>
-<div class="center"><input class="button button-save" type="submit" value="Save invoice settings"></div>
-</form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center" style="margin-top:6px;">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_invoice_extrafield">
-<input class="button" type="submit" value="Create invoice-number custom field and map it automatically"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
-<?php
-if ($mappedBankExtraField !== '') {
-?>
-<br><span class="opacitymedium">Already mapped. Clear the field above and save to create a new one.</span>
-<?php
-}
-?>
-</form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center" style="margin-top:4px;">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="createdocs">
-<input class="button" type="submit" value="Create Woo Invoices folder if missing and map it automatically"<?php echo $mappedFolderId !== '' ? ' disabled' : ''; ?>>
-<?php
-if ($mappedFolderId !== '') {
-?>
-<br><span class="opacitymedium">Already mapped. Clear the folder above and save to create a new one.</span>
-<?php
-}
-?>
-</form>
-<?php
-
-
+$bankExtraFields  = $sync->getBankExtraFields();
 $mappedGrossField = (string) ($conf->global->WBS_EXTRAFIELD_GROSS_CODE ?? '');
 $mappedFeeField   = (string) ($conf->global->WBS_EXTRAFIELD_FEE_CODE ?? '');
 ?>
@@ -608,45 +481,6 @@ can optionally be stored in Dolibarr bank-entry custom fields so they are visibl
 </form>
 <br>
 <?php
-
-if ($gzdEnabled) {
-    $storeabillFolder = (string) ($conf->global->WBS_STOREABILL_FOLDER ?? '');
-?>
-<br><table class="noborder centpercent">
-<tr class="liste_titre"><td colspan="2">StoreaBill PDF directory</td></tr>
-<tr><td class="titlefield">Detected folder</td><td>
-<?php
-    if ($storeabillFolder !== '') {
-?>
-<code><?php echo dol_escape_htmltag($storeabillFolder); ?></code> <span style="color:green;">&#10003; detected</span>
-<?php
-    } else {
-?>
-<span class="opacitymedium">Not detected yet.</span>
-<?php
-    }
-?>
-</td></tr>
-<tr><td class="titlefield">Auto-detect</td><td>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>">
-<input type="hidden" name="action" value="detect_storeabill">
-<input class="button" type="submit" value="Detect StoreaBill folder">
-</form>
-<br><span class="opacitymedium">Reads PDF URLs stored in the local cache. If none found, probes the Germanized document endpoint for one recent order. Run Refresh full cache first if you have no PDF URLs yet.</span>
-</td></tr>
-<tr><td class="titlefield">Manual override</td><td>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;" onsubmit="return confirm('Changing the StoreaBill folder name manually may break PDF downloads if the value does not match your WooCommerce installation. Continue?');">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>">
-<input type="hidden" name="action" value="save_storeabill">
-<input class="flat" type="text" name="WBS_STOREABILL_FOLDER" value="<?php echo dol_escape_htmltag($storeabillFolder); ?>" placeholder="storeabill-xxxxxxxx" style="width:220px;">
- <input class="button" type="submit" value="Save">
-</form>
-<br><span style="color:#c05000;font-size:0.88em;">&#9888; Warning: changing this manually may break PDF downloads if the folder name does not match your WooCommerce installation.</span>
-</td></tr>
-</table>
-<?php
-}
 
 // ─── Invoice data cache (debug / development) ────────────────────────────
 ?>
@@ -725,64 +559,6 @@ var _wbsSetupCacheOrders = [], _wbsSetupCacheIdx = 0, _wbsSetupCacheBatch = 10;
 var _wbsSetupCacheUpdated = 0, _wbsSetupCacheErrors = 0;
 function wbsSetupEsc(id){document.getElementById(id).style.display="none";}
 function wbsEsc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function wbsSetupOpenPdfModal(){
-  var force=document.getElementById("wbsSetupForceDownload").checked?"1":"0";
-  document.getElementById("wbsSetupPdfModal").style.display="flex";
-  document.getElementById("wbsSetupPdfList").innerHTML="";
-  document.getElementById("wbsSetupPdfBar").style.width="0%";
-  document.getElementById("wbsSetupPdfStatus").textContent="Fetching pending list…";
-  document.getElementById("wbsSetupPdfDoneBtn").style.display="none";
-  document.getElementById("wbsSetupPdfSummary").textContent="";
-  fetch(_wbsIndexAjaxUrl+"?action=pending_pdfs&force="+force+"&token="+encodeURIComponent(_wbsSetupToken))
-    .then(function(r){return r.json();}).then(function(data){
-      var orders=data.orders||[];
-      if(!orders.length){
-        document.getElementById("wbsSetupPdfStatus").textContent="No pending PDFs found. Use Force re-download all to re-fetch from WooCommerce.";
-        document.getElementById("wbsSetupPdfBar").style.width="100%";
-        document.getElementById("wbsSetupPdfDoneBtn").style.display="inline-block";
-        return;
-      }
-      document.getElementById("wbsSetupPdfStatus").textContent="0 / "+orders.length+(force==="1"?" (force mode)":"")+" — downloading…";
-      orders.forEach(function(o){
-        var row=document.createElement("div");
-        row.id="wbss-row-"+o.id;
-        row.style.cssText="padding:7px 0;border-bottom:1px solid #f2f2f2;display:flex;flex-direction:column;gap:2px;";
-        row.innerHTML='<div style="display:flex;align-items:center;gap:10px;"><span id="wbss-icon-'+o.id+'" style="font-size:1.15em;min-width:1.4em;text-align:center;">⏳</span><span style="flex:1;">#'+wbsEsc(o.number)+(o.invoice?" &ndash; "+wbsEsc(o.invoice):"")+'</span></div><pre id="wbss-note-'+o.id+'" style="font-size:.75em;color:#888;margin:0 0 0 1.8em;white-space:pre-wrap;word-break:break-all;"></pre>';
-        document.getElementById("wbsSetupPdfList").appendChild(row);
-      });
-      wbsSetupDownloadNext(orders,0,0,0,force);
-    }).catch(function(e){
-      document.getElementById("wbsSetupPdfStatus").textContent="Error: "+e.message;
-      document.getElementById("wbsSetupPdfDoneBtn").style.display="inline-block";
-    });
-}
-function wbsSetupDownloadNext(orders,idx,ok,fail,force){
-  var total=orders.length;
-  if(idx>=total){
-    document.getElementById("wbsSetupPdfBar").style.width="100%";
-    document.getElementById("wbsSetupPdfStatus").textContent="Done.";
-    document.getElementById("wbsSetupPdfDoneBtn").style.display="inline-block";
-    document.getElementById("wbsSetupPdfSummary").textContent="✅ "+ok+" downloaded   ❌ "+fail+" failed";
-    return;
-  }
-  var o=orders[idx];
-  document.getElementById("wbsSetupPdfBar").style.width=Math.round(idx/total*100)+"%";
-  document.getElementById("wbsSetupPdfStatus").textContent=(idx+1)+" / "+total+" — downloading #"+wbsEsc(o.number)+"…";
-  var el=document.getElementById("wbss-row-"+o.id);if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"});
-  var body="action=download_pdf_single&woo_order_id="+encodeURIComponent(o.id)+"&force="+(force||"0")+"&token="+encodeURIComponent(_wbsSetupToken);
-  fetch(_wbsIndexAjaxUrl,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body})
-    .then(function(r){return r.json();}).then(function(res){
-      var icon=document.getElementById("wbss-icon-"+o.id);
-      var note=document.getElementById("wbss-note-"+o.id);
-      var logStr=(res.log&&res.log.length)?"\n"+res.log.join("\n"):"";
-      if(res.ok){icon.textContent=res.already?"✔️":"✅";note.textContent=(res.already?"already saved":"saved")+logStr;ok++;}
-      else{icon.textContent="❌";note.textContent=(res.error||"failed")+logStr;fail++;}
-      wbsSetupDownloadNext(orders,idx+1,ok,fail,force);
-    }).catch(function(){
-      var icon=document.getElementById("wbss-icon-"+o.id);if(icon)icon.textContent="❌";fail++;
-      wbsSetupDownloadNext(orders,idx+1,ok,fail,force);
-    });
-}
 function wbsSetupOpenCacheModal(){
   var rangeLatest=document.getElementById("wbsCacheRangeLatest").checked;
   var limit=rangeLatest?parseInt(document.getElementById("wbsCacheLimit").value,10):0;
@@ -925,52 +701,6 @@ function wbsSetupFilterLog(){
   if(!rows.length)html='<tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
   document.getElementById("wbsLogBody").innerHTML=html;
 }
-var _wbsPdfStatusAllRows=[];
-function wbsSetupOpenPdfStatusModal(){
-  _wbsPdfStatusAllRows=[];
-  document.getElementById("wbsPdfStatusBody").innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr>';
-  document.getElementById("wbsPdfStatusSearch").value="";
-  document.getElementById("wbsPdfStatusMissingOnly").checked=false;
-  document.getElementById("wbsPdfStatusCount").textContent="";
-  document.getElementById("wbsPdfStatusModal").style.display="flex";
-  var fd=new FormData();fd.append("token",_wbsSetupToken);fd.append("action","setup_pdf_status");
-  fetch(_wbsSetupAjaxUrl,{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){
-    if(!d.ok){document.getElementById("wbsPdfStatusBody").innerHTML='<tr><td colspan="6">Error: '+d.error+'</td></tr>';return;}
-    _wbsPdfStatusAllRows=d.rows||[];
-    wbsSetupFilterPdfStatus();
-  }).catch(function(e){document.getElementById("wbsPdfStatusBody").innerHTML='<tr><td colspan="6">Request failed: '+e+'</td></tr>';});
-}
-function wbsSetupFilterPdfStatus(){
-  var q=(document.getElementById("wbsPdfStatusSearch").value||"").toLowerCase().trim();
-  var missingOnly=document.getElementById("wbsPdfStatusMissingOnly").checked;
-  var rows=_wbsPdfStatusAllRows.filter(function(r){
-    if(missingOnly&&(r.pdf_ecm||r.pdf_url))return false;
-    if(q&&(r.number+r.invoice+r.payment).toLowerCase().indexOf(q)<0)return false;
-    return true;
-  });
-  var saved=_wbsPdfStatusAllRows.filter(function(r){return!!r.pdf_ecm;}).length;
-  var urlOnly=_wbsPdfStatusAllRows.filter(function(r){return!r.pdf_ecm&&!!r.pdf_url;}).length;
-  var missing=_wbsPdfStatusAllRows.length-saved-urlOnly;
-  document.getElementById("wbsPdfStatusCount").textContent=rows.length+" shown  ✅ "+saved+" saved  📄 "+urlOnly+" URL only  ❌ "+missing+" missing";
-  var html="";
-  rows.forEach(function(r,i){
-    var cls=i%2===0?"impair":"pair";
-    var icon,detail;
-    if(r.pdf_ecm){icon='<span title="Saved in Dolibarr ECM" style="color:#090;">✅</span>';detail='<span style="color:#090;font-size:.85em;">'+wbsEsc(r.pdf_ecm)+'</span>';}
-    else if(r.pdf_url){icon='<span title="URL known, not yet downloaded" style="color:#e67e22;">&#128196;</span>';detail='<a href="'+wbsEsc(r.pdf_url)+'" target="_blank" style="font-size:.85em;word-break:break-all;">'+wbsEsc(r.pdf_url)+'</a>';}
-    else{icon='<span title="No PDF info — use Download invoice PDFs with Force re-download" style="color:#c00;">❌</span>';detail='<span style="color:#aaa;font-size:.85em;">—</span>';}
-    html+='<tr class="'+cls+'">';
-    html+='<td style="white-space:nowrap;">'+r.date.substring(0,16)+'</td>';
-    html+='<td>#'+wbsEsc(r.number)+'</td>';
-    html+='<td>'+wbsEsc(r.invoice)+'</td>';
-    html+='<td>'+wbsEsc(r.payment)+'</td>';
-    html+='<td style="text-align:center;">'+icon+'</td>';
-    html+='<td>'+detail+'</td>';
-    html+='</tr>';
-  });
-  if(!rows.length)html='<tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
-  document.getElementById("wbsPdfStatusBody").innerHTML=html;
-}
 </script>
 <?php
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1037,41 +767,6 @@ document.getElementById("wbsDiagModal").style.display="flex";
 </script>
 <?php
 }
-
-?>
-<br><table class="noborder centpercent">
-<tr class="liste_titre"><td colspan="2">PDF download test</td></tr>
-<tr><td class="titlefield">Order ID or PDF URL</td><td>
-<input type="text" id="wbsTestPdfInput" class="flat" placeholder="WooCommerce order ID (e.g. 30955)  OR  https://... direct PDF URL" style="width:500px;max-width:100%;">
- <button class="button" type="button" onclick="wbsSetupTestPdf()">Test download attempt</button>
-<br><span class="opacitymedium">Order ID → calls the StoreaBill API endpoint directly (no cache required). URL → tries direct fetch strategies. Does not save any file.</span>
-</td></tr>
-<tr><td class="titlefield" style="vertical-align:top;padding-top:6px;">Attempt log</td><td>
-<pre id="wbsTestPdfLog" style="font-size:0.82em;background:#f5f5f5;border:1px solid #ddd;padding:10px;min-height:80px;white-space:pre-wrap;word-break:break-all;margin:0;border-radius:4px;"></pre>
-</td></tr></table>
-<script>
-function wbsSetupTestPdf(){
-  var val=document.getElementById("wbsTestPdfInput").value.trim();
-  if(!val){document.getElementById("wbsTestPdfLog").textContent="Enter an order ID or PDF URL first.";return;}
-  document.getElementById("wbsTestPdfLog").textContent="Testing…";
-  var fd=new FormData();fd.append("token",_wbsSetupToken);fd.append("action","setup_test_pdf");
-  if(/^https?:\/\//.test(val)){fd.append("pdf_url",val);}else{fd.append("woo_order_id",val);}
-  fetch(_wbsSetupAjaxUrl,{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){
-    var lines=[];
-    lines.push("Result: "+(d.ok?"OK":"FAILED"));
-    if(d.mode==="sab"){lines.push("Mode: StoreaBill API endpoint (no cache used)");}
-    else if(d.mode==="url"){lines.push("Mode: direct URL fetch");}
-    if(d.invoice_number)lines.push("Invoice number from SAB: "+d.invoice_number);
-    if(d.url)lines.push("URL tested: "+d.url);
-    if(d.bytes)lines.push("Bytes received: "+d.bytes);
-    if(d.is_pdf!==undefined)lines.push("Valid PDF header: "+(d.is_pdf?"YES":"NO — response is not a PDF"));
-    if(d.error)lines.push("Error: "+d.error);
-    if(d.log&&d.log.length){lines.push("","=== Attempt log ===");d.log.forEach(function(l){lines.push(l);});}
-    document.getElementById("wbsTestPdfLog").textContent=lines.join("\n");
-  }).catch(function(e){document.getElementById("wbsTestPdfLog").textContent="Request failed: "+e;});
-}
-</script>
-<?php
 
 ?>
 <!-- Danger zone -->
