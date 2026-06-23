@@ -1532,7 +1532,7 @@ class WooBankSync
         return array('ok' => false, 'already' => false, 'filepath' => '', 'log' => $this->pdfLog);
     }
 
-    private function getExistingEcmPath($orderId)
+    public function getExistingEcmPath($orderId)
     {
         $e = (int) $this->conf->entity;
         $oid = $this->db->escape((string) $orderId);
@@ -2333,7 +2333,7 @@ class WooBankSync
     }
 
 
-    private function setConst($name, $value, $type = 'chaine')
+    public function setConst($name, $value, $type = 'chaine')
     {
         if (function_exists('dolibarr_set_const')) {
             dolibarr_set_const($this->db, $name, $value, $type, 0, '', $this->conf->entity);
