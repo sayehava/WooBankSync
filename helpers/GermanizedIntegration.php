@@ -850,7 +850,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 <tr class="liste_titre"><td colspan="2">Germanized / Germanized Pro — invoice integration</td></tr>
 <tr><td class="titlefield">Enable Germanized integration</td><td>
 <label><input type="checkbox" id="wbsGzdToggle" name="WBS_GERMANIZED_PRO_ENABLED" value="1"<?php echo $gzdEnabled ? ' checked' : ''; ?>
- onchange="document.getElementById('wbsGzdSub').style.display=this.checked?'table-row-group':'none';">
+ onchange="document.getElementById('wbsGzdSub').style.display=this.checked?'table-row-group':'none';document.getElementById('wbsGzdExtra').style.display=this.checked?'block':'none';">
 Enable Germanized Pro invoice extraction</label>
 <br><span class="opacitymedium">Reads invoice number from <code>invoices[0].formatted_number</code> in the WooCommerce order response (StoreaBill / Germanized Pro).</span>
 </td></tr>
@@ -883,6 +883,7 @@ Enable Germanized Pro invoice extraction</label>
 </table>
 <div class="center"><input class="button button-save" type="submit" value="Save Germanized settings"></div>
 </form>
+<div id="wbsGzdExtra" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
 <form method="POST" action="<?php echo $self; ?>" class="center" style="margin-top:6px;">
 <input type="hidden" name="token" value="<?php echo $token; ?>"><input type="hidden" name="action" value="create_invoice_extrafield">
 <input class="button" type="submit" value="Create invoice-number custom field and map it automatically"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
@@ -1074,6 +1075,8 @@ function wbsGzdTestPdf(){
 </script>
 <?php
         endif; // if ($gzdEnabled)
+        ?>
+</div><?php // wbsGzdExtra
     }
 
     // ── Private utilities (duplicated from WooBankSync for self-containment) ──
