@@ -143,6 +143,17 @@ if ($action === 'save_invoice') {
     setEventMessages('Invoice reference settings saved.', null, 'mesgs');
 }
 
+if ($action === 'save_amount_fields') {
+    wbs_set_const_safe($db, 'WBS_EXTRAFIELD_GROSS_CODE', GETPOST('WBS_EXTRAFIELD_GROSS_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
+    wbs_set_const_safe($db, 'WBS_EXTRAFIELD_FEE_CODE', GETPOST('WBS_EXTRAFIELD_FEE_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
+    setEventMessages('Amount custom field mapping saved.', null, 'mesgs');
+}
+
+if ($action === 'create_amount_extrafields') {
+    list($ok, $msg) = $sync->createAndMapAmountExtraFields();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
 if ($action === 'create_invoice_extrafield') {
     list($ok, $msg) = $sync->createAndMapInvoiceBankExtraField();
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
@@ -633,6 +644,47 @@ if ($mappedFolderId !== '') {
 </form>
 <?php
 
+
+$mappedGrossField = (string) ($conf->global->WBS_EXTRAFIELD_GROSS_CODE ?? '');
+$mappedFeeField   = (string) ($conf->global->WBS_EXTRAFIELD_FEE_CODE ?? '');
+?>
+<br>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>">
+<input type="hidden" name="action" value="save_amount_fields">
+<table class="noborder centpercent">
+<tr class="liste_titre"><td colspan="2">Amount custom fields (gross and fee)</td></tr>
+<tr><td colspan="2" class="opacitymedium" style="padding-bottom:8px;">
+Each bank entry is created with <strong>net amount received</strong> (gross &minus; fee). The original gross and fee
+can optionally be stored in Dolibarr bank-entry custom fields so they are visible in reports and exports.
+</td></tr>
+<tr><td class="titlefield">Gross amount field</td><td>
+<select class="flat minwidth300" name="WBS_EXTRAFIELD_GROSS_CODE">
+<option value="">-- not mapped --</option>
+<?php foreach ($bankExtraFields as $code => $fieldLabel) { ?>
+<option value="<?php echo dol_escape_htmltag($code); ?>"<?php echo $code === $mappedGrossField ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($fieldLabel . ' (' . $code . ')'); ?></option>
+<?php } ?>
+</select>
+<br><span class="opacitymedium">Custom field that will receive the original WooCommerce order gross total.</span>
+</td></tr>
+<tr><td class="titlefield">Fee amount field</td><td>
+<select class="flat minwidth300" name="WBS_EXTRAFIELD_FEE_CODE">
+<option value="">-- not mapped --</option>
+<?php foreach ($bankExtraFields as $code => $fieldLabel) { ?>
+<option value="<?php echo dol_escape_htmltag($code); ?>"<?php echo $code === $mappedFeeField ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($fieldLabel . ' (' . $code . ')'); ?></option>
+<?php } ?>
+</select>
+<br><span class="opacitymedium">Custom field that will receive the payment processor fee (Gebühr).</span>
+</td></tr>
+</table>
+<div class="center"><input class="button button-save" type="submit" value="Save amount field mapping"></div>
+</form>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center" style="margin-top:6px;">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_amount_extrafields">
+<input class="button" type="submit" value="Create and map missing amount custom fields automatically">
+</form>
+<br>
+<?php
 
 if ($gzdEnabled) {
     $storeabillFolder = (string) ($conf->global->WBS_STOREABILL_FOLDER ?? '');
