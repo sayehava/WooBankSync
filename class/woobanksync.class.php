@@ -8,6 +8,7 @@ class WooBankSync
     private $db;
     private $conf;
     private $langs;
+    private $integrationManager = null;
     public $errors = array();
     public $pdfLog = array();
     public $lastSabInvoiceNumber = '';
@@ -17,6 +18,20 @@ class WooBankSync
         $this->db = $db;
         $this->conf = $conf;
         $this->langs = $langs;
+    }
+
+    private function integrationManager()
+    {
+        if ($this->integrationManager === null) {
+            require_once __DIR__ . '/../helpers/WbsIntegrationManager.php';
+            $this->integrationManager = new WbsIntegrationManager($this->db, $this->conf);
+        }
+        return $this->integrationManager;
+    }
+
+    private function integrations()
+    {
+        return $this->integrationManager()->getDetected();
     }
 
     public function client()
