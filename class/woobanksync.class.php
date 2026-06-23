@@ -109,8 +109,12 @@ class WooBankSync
         $gross = $this->normalizeAmount($order['total'] ?? 0);
         $currency = isset($order['currency']) ? (string) $order['currency'] : 'EUR';
         $dateOrder = $this->wooDateToSql($order['date_paid'] ?? ($order['date_created'] ?? null));
-        $invoiceNumber = $this->extractWooInvoiceNumber($order);
-        $pdfUrl = $this->extractWooInvoicePdfUrlFromOrder($order);
+        $invoiceNumber = '';
+        $pdfUrl = '';
+        foreach ($this->integrations() as $integration) {
+            if ($invoiceNumber === '') $invoiceNumber = $integration->extractInvoiceNumber($order);
+            if ($pdfUrl === '') $pdfUrl = $integration->extractPdfUrl($order);
+        }
         $orderStatus = isset($order['status']) ? (string) $order['status'] : '';
 
         if ($this->isOrderSynced($orderId)) {
@@ -197,9 +201,11 @@ class WooBankSync
         }
 
         $pdfEcmFilepath = '';
-        if (!$dryRun && (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1) {
-            $result = $this->downloadAndSavePdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl);
-            if ($result['ok']) $pdfEcmFilepath = $result['filepath'];
+        if (!$dryRun) {
+            foreach ($this->integrations() as $integration) {
+                $result = $integration->tryDownloadPdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $this);
+                if ($result['ok']) { $pdfEcmFilepath = $result['filepath']; break; }
+            }
         }
 
         $status = $dryRun ? 'dryrun' : 'synced';
