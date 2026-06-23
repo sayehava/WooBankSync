@@ -179,3 +179,50 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 | `scripts/sync.php` | 🖥️ CLI/cron entry point |
 | `sql/llx_woobanksync_log.sql` | 🗄️ Sync log table schema |
 | `lang/en_US/woobanksync.lang` | 🌍 Language strings |
+
+---
+
+
+
+
+
+⸻
+
+## 📜 License & Attribution
+
+## [!IMPORTANT]
+This project is licensed under AGPL-3.0 with additional attribution requirements.
+
+If you redistribute, fork, or publish a modified version of this project, you must:
+
+✅ Keep visible attribution to the original author
+
+✅ Keep a reference to the original project repository
+
+✅ Preserve the attribution notice in the README file or equivalent primary documentation
+
+✅ Publish modified versions under the same license terms
+
+✅ Make source code available as required by the license
+
+👩‍💻 Original Author: Sayeh Ava Pazouki
+
+🔗 Original Repository: https://github.com/sayehava/woobanksync
+
+[!NOTE]
+Full license terms and attribution requirements are available in the LICENSE file.
+
+⸻
+
+❤️ Support Development
+
+If WooBankSync saves you time or helps your business, consider supporting future development.
+
+Platform	Link
+☕ Buy Me a Coffee	https://buymeacoffee.com/sayehava
+💜 Ko-fi	https://ko-fi.com/sayehava
+
+[!TIP]
+Even a small donation helps fund future modules, maintenance, bug fixes, and new features.
+
+⸻
