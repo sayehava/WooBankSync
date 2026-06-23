@@ -143,26 +143,15 @@ class WooBankSync
         if ($this->nativeInvoiceReferenceEnabled() && !empty($invoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($invoiceNumber);
 
         $this->db->begin();
-        $bankLineGross = 0;
-        $bankLineFee = 0;
+        $bankLineId = 0;
 
         if (!$dryRun) {
-            $bankLineGross = $this->insertBankLine($bankId, $gross, $labelBase, $dateOrder);
-            if ($bankLineGross <= 0) {
+            $bankLineId = $this->insertBankLine($bankId, $payout, $labelBase, $dateOrder);
+            if ($bankLineId <= 0) {
                 $this->db->rollback();
-                $msg = 'Failed to insert gross bank line for Woo order #' . $orderNumber . ': ' . $this->db->lasterror();
+                $msg = 'Failed to insert bank line for Woo order #' . $orderNumber . ': ' . $this->db->lasterror();
                 $this->insertLog($order, $bankId, $gross, $fee, 0, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
                 return array('status' => 'errors', 'message' => $msg);
-            }
-
-            if ($fee > 0) {
-                $bankLineFee = $this->insertBankLine($bankId, -1 * $fee, 'Payment fee for ' . $labelBase, $dateOrder);
-                if ($bankLineFee <= 0) {
-                    $this->db->rollback();
-                    $msg = 'Failed to insert fee bank line for Woo order #' . $orderNumber . ': ' . $this->db->lasterror();
-                    $this->insertLog($order, $bankId, $gross, $fee, $bankLineGross, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
-                    return array('status' => 'errors', 'message' => $msg);
-                }
             }
         }
 
@@ -173,8 +162,8 @@ class WooBankSync
         }
 
         $status = $dryRun ? 'dryrun' : 'synced';
-        $message = ($dryRun ? '[DRY RUN] ' : '') . 'Synced Woo order #' . $orderNumber . ' gross=' . price($gross) . ' fee=' . price($fee) . ' payout=' . price($payout) . ' gateway=' . $paymentMethod . ($mappedPaymentMethod !== $paymentMethod ? ' mapped_to=' . $mappedPaymentMethod : '');
-        $this->insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath);
+        $message = ($dryRun ? '[DRY RUN] ' : '') . 'Synced Woo order #' . $orderNumber . ' gross=' . price($gross) . ' fee=' . price($fee) . ' net=' . price($payout) . ' gateway=' . $paymentMethod . ($mappedPaymentMethod !== $paymentMethod ? ' mapped_to=' . $mappedPaymentMethod : '');
+        $this->insertLog($order, $bankId, $gross, $fee, $bankLineId, 0, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath);
         $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $pdfEcmFilepath, $order);
         $this->db->commit();
 
@@ -446,19 +435,11 @@ class WooBankSync
         $this->db->begin();
 
         if (!empty($logRow->bank_line_id_gross)) {
+            $newPayout = max(0.0, $newGross - $newFee);
             $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'bank SET'
                 . " label='" . $this->db->escape($labelBase) . "'"
-                . ', amount=' . price2num($newGross, 'MT')
+                . ', amount=' . price2num($newPayout, 'MT')
                 . ' WHERE rowid=' . (int) $logRow->bank_line_id_gross;
-            if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
-        }
-
-        if (!empty($logRow->bank_line_id_fee)) {
-            $feeLabel = 'Payment fee for ' . $labelBase;
-            $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'bank SET'
-                . " label='" . $this->db->escape($feeLabel) . "'"
-                . ', amount=' . price2num(-1 * $newFee, 'MT')
-                . ' WHERE rowid=' . (int) $logRow->bank_line_id_fee;
             if (!$this->db->query($sql)) { $this->db->rollback(); return false; }
         }
 
