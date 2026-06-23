@@ -239,7 +239,7 @@ if ($action === 'setup_cache_refresh_list') {
     echo json_encode(array(
         'ok' => true,
         'orders' => $sync->getFullCacheRefreshOrders($limit),
-        'germanized_enabled' => !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED),
+        'integrations_detected' => !empty($detectedIntegrations),
         'batch_size' => max(1, min(100, (int) ($conf->global->WBS_CACHE_BATCH_SIZE ?? 10))),
     ));
     exit;
