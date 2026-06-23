@@ -8,7 +8,7 @@ require_once DOL_DOCUMENT_ROOT . '/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT . '/core/lib/bank.lib.php';
 require_once DOL_DOCUMENT_ROOT . '/compta/bank/class/account.class.php';
 require_once __DIR__ . '/../class/woobanksync.class.php';
-require_once __DIR__ . '/../class/wbsgermanizedclient.class.php';
+require_once __DIR__ . '/../helpers/WbsIntegrationManager.php';
 
 $langs->loadLangs(array('admin', 'banks', 'ecm', 'woobanksync@woobanksync'));
 if (!$user->admin) accessforbidden();
@@ -41,6 +41,22 @@ if (!function_exists('wbs_set_const_safe')) {
 
 $action = GETPOST('action', 'aZ09');
 $sync = new WooBankSync($db, $conf, $langs);
+$manager = new WbsIntegrationManager($db, $conf);
+$detectedIntegrations = $manager->getDetected();
+
+// Dispatch AJAX actions to integrations (they echo JSON and exit).
+foreach ($detectedIntegrations as $_integration) {
+    $_integration->handleAjaxAction($action, $conf, $db, $langs, $sync);
+}
+
+// Dispatch POST actions to integrations.
+$_integrationHandled = false;
+foreach ($detectedIntegrations as $_integration) {
+    if ($_integration->handleAction($action, $conf, $db, $langs, $sync)) {
+        $_integrationHandled = true;
+        break;
+    }
+}
 
 function wbs_bank_select($name, $selected)
 {
@@ -199,8 +215,8 @@ if ($action === 'diagnose_meta') {
         // response + all known document endpoints)
         $firstOrderId = !empty($orders[0]['id']) ? (int) $orders[0]['id'] : 0;
         if ($firstOrderId > 0) {
-            $gzdClient = new WbsGermanizedClient($wooUrl, $wooKey, $wooSecret);
-            $diagResult['germanized_probe'] = $gzdClient->probeOrder($firstOrderId);
+            $gzdIntegration = $manager->get('germanized');
+            if ($gzdIntegration) $diagResult['germanized_probe'] = $gzdIntegration->probeGzd($firstOrderId);
         }
 
         wbs_set_const_safe($db, 'WBS_META_DIAG_JSON', json_encode($diagResult), 'chaine', 0, '', $conf->entity);
