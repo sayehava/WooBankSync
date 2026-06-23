@@ -145,20 +145,6 @@ if ($action === 'save_docs') {
     setEventMessages('Document settings saved.', null, 'mesgs');
 }
 
-if ($action === 'save_invoice') {
-    $gzdEnabled = GETPOST('WBS_GERMANIZED_PRO_ENABLED', 'int') ? '1' : '0';
-    wbs_set_const_safe($db, 'WBS_GERMANIZED_PRO_ENABLED', $gzdEnabled, 'yesno', 0, '', $conf->entity);
-    $labelEnabled = ($gzdEnabled === '1' && GETPOST('WBS_DOCUMENT_SYNC_ENABLED', 'int')) ? '1' : '0';
-    wbs_set_const_safe($db, 'WBS_DOCUMENT_SYNC_ENABLED', $labelEnabled, 'yesno', 0, '', $conf->entity);
-    $extraEnabled = ($gzdEnabled === '1' && GETPOST('WBS_BANK_EXTRAFIELD_ENABLED', 'int')) ? '1' : '0';
-    wbs_set_const_safe($db, 'WBS_BANK_EXTRAFIELD_ENABLED', $extraEnabled, 'yesno', 0, '', $conf->entity);
-    wbs_set_const_safe($db, 'WBS_BANK_EXTRAFIELD_CODE', GETPOST('WBS_BANK_EXTRAFIELD_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
-    wbs_set_const_safe($db, 'WBS_DOCUMENT_FOLDER_ID', GETPOST('WBS_DOCUMENT_FOLDER_ID', 'int'), 'chaine', 0, '', $conf->entity);
-    $pdfDownload = ($gzdEnabled === '1' && GETPOST('WBS_PDF_DOWNLOAD_ENABLED', 'int')) ? '1' : '0';
-    wbs_set_const_safe($db, 'WBS_PDF_DOWNLOAD_ENABLED', $pdfDownload, 'yesno', 0, '', $conf->entity);
-    setEventMessages('Invoice reference settings saved.', null, 'mesgs');
-}
-
 if ($action === 'save_amount_fields') {
     wbs_set_const_safe($db, 'WBS_EXTRAFIELD_GROSS_CODE', GETPOST('WBS_EXTRAFIELD_GROSS_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
     wbs_set_const_safe($db, 'WBS_EXTRAFIELD_FEE_CODE', GETPOST('WBS_EXTRAFIELD_FEE_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
@@ -167,16 +153,6 @@ if ($action === 'save_amount_fields') {
 
 if ($action === 'create_amount_extrafields') {
     list($ok, $msg) = $sync->createAndMapAmountExtraFields();
-    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
-}
-
-if ($action === 'create_invoice_extrafield') {
-    list($ok, $msg) = $sync->createAndMapInvoiceBankExtraField();
-    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
-}
-
-if ($action === 'createdocs') {
-    list($ok, $msg) = $sync->createDocumentFolder();
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
@@ -224,60 +200,6 @@ if ($action === 'diagnose_meta') {
     }
 }
 
-if ($action === 'detect_storeabill') {
-    list($ok, $msg) = $sync->detectStoreaBillFolder();
-    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
-}
-
-if ($action === 'save_storeabill') {
-    $folder = trim(GETPOST('WBS_STOREABILL_FOLDER', 'restricthtml'));
-    if ($folder !== '' && !preg_match('/^storeabill-[a-z0-9]+$/i', $folder)) {
-        setEventMessages('Invalid folder name. Expected format: storeabill-xxxxxxxx (only lowercase letters and digits after the dash).', null, 'errors');
-    } else {
-        wbs_set_const_safe($db, 'WBS_STOREABILL_FOLDER', $folder, 'chaine', 0, '', $conf->entity);
-        setEventMessages($folder !== '' ? 'StoreaBill folder saved: ' . $folder : 'StoreaBill folder cleared.', null, 'mesgs');
-    }
-}
-
-// AJAX: test downloading a PDF — order ID uses SAB endpoint, URL uses direct fetch (no file saved)
-if ($action === 'setup_test_pdf') {
-    header('Content-Type: application/json');
-    if (!$user->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied', 'log' => array())); exit; }
-    $testUrl = trim(GETPOST('pdf_url', 'restricthtml'));
-    $orderId  = trim(GETPOST('woo_order_id', 'alphanohtml'));
-
-    if ($orderId !== '') {
-        // Order ID mode: use StoreaBill endpoint — no cache lookup needed
-        $content = $sync->testFetchStoreaBillPdf((int) $orderId);
-        echo json_encode(array(
-            'ok'             => ($content !== false),
-            'mode'           => 'sab',
-            'order_id'       => $orderId,
-            'invoice_number' => $sync->lastSabInvoiceNumber,
-            'bytes'          => ($content !== false ? strlen($content) : 0),
-            'is_pdf'         => ($content !== false && substr($content, 0, 4) === '%PDF'),
-            'log'            => $sync->pdfLog,
-        ));
-        exit;
-    }
-
-    if ($testUrl === '') {
-        echo json_encode(array('ok' => false, 'error' => 'Enter a WooCommerce order ID or a direct PDF URL.', 'log' => array())); exit;
-    }
-
-    // URL mode: direct fetch with fallback strategies
-    $content = $sync->testFetchPdfUrl($testUrl);
-    echo json_encode(array(
-        'ok'     => ($content !== false),
-        'mode'   => 'url',
-        'url'    => $testUrl,
-        'bytes'  => ($content !== false ? strlen($content) : 0),
-        'is_pdf' => ($content !== false && substr($content, 0, 4) === '%PDF'),
-        'log'    => $sync->pdfLog,
-    ));
-    exit;
-}
-
 // AJAX: return sync log rows for the log viewer modal
 if ($action === 'setup_log_list') {
     header('Content-Type: application/json');
@@ -302,33 +224,6 @@ if ($action === 'setup_log_list') {
                 'date'         => (string) ($obj->date_sync ?? ''),
                 'pdf_url'      => (string) ($obj->woo_invoice_pdf_url ?? ''),
                 'pdf_ecm'      => (string) ($obj->pdf_ecm_filepath ?? ''),
-            );
-        }
-    }
-    echo json_encode(array('ok' => true, 'rows' => $rows));
-    exit;
-}
-
-// AJAX: PDF download status per synced order
-if ($action === 'setup_pdf_status') {
-    header('Content-Type: application/json');
-    if (!$user->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit; }
-    // SELECT * so query succeeds even if dynamic columns (woo_invoice_pdf_url, pdf_ecm_filepath) don't exist yet
-    $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
-        . ' WHERE entity=' . (int) $conf->entity . " AND sync_status='synced'"
-        . ' ORDER BY rowid DESC LIMIT 500';
-    $rows = array();
-    $resql = $db->query($sql);
-    if ($resql) {
-        while ($obj = $db->fetch_object($resql)) {
-            $rows[] = array(
-                'id'      => (string) ($obj->woo_order_id ?? ''),
-                'number'  => (string) ($obj->woo_order_number ?? ''),
-                'invoice' => (string) ($obj->woo_invoice_number ?? ''),
-                'payment' => (string) ($obj->payment_method ?? ''),
-                'date'    => (string) ($obj->date_sync ?? ''),
-                'pdf_url' => (string) ($obj->woo_invoice_pdf_url ?? ''),
-                'pdf_ecm' => (string) ($obj->pdf_ecm_filepath ?? ''),
             );
         }
     }
