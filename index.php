@@ -117,9 +117,7 @@ $hasPdfIntegration = !empty($_wbsManager->getDetected());
 llxHeader('', $langs->trans('WooBankSync'));
 ?>
 <?php echo load_fiche_titre($langs->trans('WooBankSync'), '<a href="admin/setup.php">Setup</a>', 'bank'); ?>
-<?php
 
-?>
 <button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
 <button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:4px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
 <label title="Force-update all bank entries even if no change is detected (re-writes labels and amounts)" style="cursor:pointer;margin-right:10px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDiff" style="vertical-align:middle;margin-right:3px;">Force update all</label>
@@ -178,7 +176,6 @@ if ($resql) {
 }
 ?>
 </table></div>
-<?php
 
 <?php if ($hasPdfIntegration): ?>
 <!-- PDF download modal — only rendered when a PDF-capable integration is detected -->
