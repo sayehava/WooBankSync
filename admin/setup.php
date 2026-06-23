@@ -322,7 +322,6 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
     </div>
   </div>
 </div>
-?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_api">
