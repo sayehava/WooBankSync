@@ -153,6 +153,7 @@ class WooBankSync
                 $this->insertLog($order, $bankId, $gross, $fee, 0, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
                 return array('status' => 'errors', 'message' => $msg);
             }
+            $this->writeBankAmountExtraFields($bankLineId, $gross, $fee);
         }
 
         $pdfEcmFilepath = '';
@@ -1163,6 +1164,38 @@ class WooBankSync
         $res = $this->db->query($sql);
         if (!$res) return 0;
         return (int) $this->db->last_insert_id(MAIN_DB_PREFIX . 'bank');
+    }
+
+    private function writeBankAmountExtraFields($bankLineId, $gross, $fee)
+    {
+        if ($bankLineId <= 0) return;
+        $grossCode = trim((string) $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', ''));
+        $feeCode   = trim((string) $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''));
+        if ($grossCode === '' && $feeCode === '') return;
+
+        $table   = MAIN_DB_PREFIX . 'bank_extrafields';
+        $columns = $this->getTableColumns($table);
+        if (empty($columns) || !in_array('fk_object', $columns, true)) return;
+
+        $resql = $this->db->query('SELECT rowid FROM ' . $table . ' WHERE fk_object=' . (int) $bankLineId . ' LIMIT 1');
+        $existingId = 0;
+        if ($resql && ($obj = $this->db->fetch_object($resql))) $existingId = (int) $obj->rowid;
+
+        $fields = array();
+        if ($grossCode !== '' && in_array($grossCode, $columns, true)) $fields[$grossCode] = price2num($gross, 'MT');
+        if ($feeCode !== '' && in_array($feeCode, $columns, true))     $fields[$feeCode]   = price2num($fee, 'MT');
+        if (empty($fields)) return;
+
+        if ($existingId > 0) {
+            $sets = array();
+            foreach ($fields as $col => $val) $sets[] = $col . '=' . $val;
+            $this->db->query('UPDATE ' . $table . ' SET ' . implode(',', $sets) . ' WHERE rowid=' . $existingId);
+        } else {
+            $cols = array('fk_object');
+            $vals = array((string) (int) $bankLineId);
+            foreach ($fields as $col => $val) { $cols[] = $col; $vals[] = (string) $val; }
+            $this->db->query('INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $vals) . ')');
+        }
     }
 
     private function setBankInvoiceNumber($bankLineId, $invoiceNumber)
