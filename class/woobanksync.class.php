@@ -1702,16 +1702,6 @@ class WooBankSync
             if (!empty($order['id'])) $ordersById[(string) $order['id']] = $order;
         }
 
-        $germanizedEnabled = (int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') === 1;
-        $gzd = null;
-        if ($germanizedEnabled) {
-            $gzd = new WbsGermanizedClient(
-                (string) $this->getConst('WBS_WOO_URL', ''),
-                (string) $this->getConst('WBS_WOO_CONSUMER_KEY', ''),
-                (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '')
-            );
-        }
-
         $result = array('updated' => 0, 'errors' => 0, 'items' => array());
         foreach ($ids as $id) {
             $key = (string) $id;
@@ -1722,14 +1712,12 @@ class WooBankSync
             }
 
             $order = $ordersById[$key];
-            $invoiceNumber = $this->extractWooInvoiceNumber($order);
-            $pdfUrl = $this->extractWooInvoicePdfUrlFromOrder($order);
-
-            // Only call Germanized if the invoice number is still missing after parsing order data
-            if ($germanizedEnabled && $gzd !== null && $invoiceNumber === '') {
-                $gzdData = $gzd->getOrderDocumentData($id);
-                if (!empty($gzdData['invoice_number'])) $invoiceNumber = (string) $gzdData['invoice_number'];
-                if (!empty($gzdData['invoice_pdf_url'])) $pdfUrl = (string) $gzdData['invoice_pdf_url'];
+            $invoiceNumber = '';
+            $pdfUrl = '';
+            foreach ($this->integrations() as $integration) {
+                $enriched = $integration->enrichCacheOrder($order, $this);
+                if ($invoiceNumber === '' && $enriched['invoice_number'] !== '') $invoiceNumber = $enriched['invoice_number'];
+                if ($pdfUrl === '' && $enriched['pdf_url'] !== '') $pdfUrl = $enriched['pdf_url'];
             }
 
             $cacheRow = $this->getOrderCacheState($key);
@@ -1745,7 +1733,7 @@ class WooBankSync
                 'id' => $key,
                 'number' => $orderNumber,
                 'ok' => true,
-                'germanized' => $germanizedEnabled,
+                'has_integrations' => !empty($this->integrations()),
             );
         }
         return $result;
