@@ -964,23 +964,38 @@ function wbsSetupOpenLogModal(){
 function wbsSetupFilterLog(){
   var q=(document.getElementById("wbsLogSearch").value||"").toLowerCase().trim();
   var rows=q?_wbsLogAllRows.filter(function(r){
-    return (r.number+r.invoice+r.payment+r.status+r.message).toLowerCase().indexOf(q)>=0;
+    var wooR=parseFloat(r.woo_payout||0);
+    var n=parseFloat(r.net||0)||(parseFloat(r.gross||0)-parseFloat(r.fee||0));
+    var label=r.status==='synced'?(wooR>0?(Math.abs(n-wooR)<0.005?'matched':'unmatched'):'calculated'):r.status;
+    return (r.number+r.invoice+r.payment+r.status+label+r.message).toLowerCase().indexOf(q)>=0;
   }):_wbsLogAllRows;
   document.getElementById("wbsLogCount").textContent=rows.length+" of "+_wbsLogAllRows.length+" rows";
   var html="";
   rows.forEach(function(r,i){
     var cls=i%2===0?"impair":"pair";
-    var statusCol=r.status==="synced"?"color:#090":"color:#c00";
     var pdf="";
     if(r.pdf_ecm)pdf='<span title="Saved locally">&#128196;</span>';
     else if(r.pdf_url)pdf='<a href="'+r.pdf_url+'" target="_blank" title="Stored URL">&#8599;</a>';
     var net=parseFloat(r.net||0);
     if(net===0)net=parseFloat(r.gross||0)-parseFloat(r.fee||0);
     var wooRaw=parseFloat(r.woo_payout||0);
-    var netColor='';var netIcon='';var netTitle='';
-    if(wooRaw>0){
-      if(Math.abs(net-wooRaw)<0.005){netColor='color:#090;';netIcon='&#10003; ';}
-      else{netColor='color:#e67e22;';netIcon='&#9888; ';netTitle=' title="WooCommerce: '+wooRaw.toFixed(2)+' Calculated: '+(parseFloat(r.gross||0)-parseFloat(r.fee||0)).toFixed(2)+'"';}
+    var calcPayout=parseFloat(r.gross||0)-parseFloat(r.fee||0);
+    var matched=wooRaw>0&&Math.abs(net-wooRaw)<0.005;
+    var unmatched=wooRaw>0&&!matched;
+    var netTip=unmatched?(' title="WC payout: '+wooRaw.toFixed(2)+'  Calculated: '+calcPayout.toFixed(2)+'"'):'';
+    var statusBadge='';
+    if(r.status==='synced'){
+      if(wooRaw>0&&matched) statusBadge='<span style="background:#28a745;color:#fff;padding:1px 7px;border-radius:3px;font-size:.82em;white-space:nowrap;">&#10003; Matched</span>';
+      else if(unmatched)    statusBadge='<span style="background:#e67e22;color:#fff;padding:1px 7px;border-radius:3px;font-size:.82em;white-space:nowrap;">&#9888; Unmatched</span>';
+      else                   statusBadge='<span style="background:#0082c3;color:#fff;padding:1px 7px;border-radius:3px;font-size:.82em;white-space:nowrap;">&#126; Calculated</span>';
+    }else if(r.status==='error'){
+      statusBadge='<span style="background:#b00020;color:#fff;padding:1px 7px;border-radius:3px;font-size:.82em;white-space:nowrap;">&#10007; Error</span>';
+    }else if(r.status==='skipped'){
+      statusBadge='<span style="background:#888;color:#fff;padding:1px 7px;border-radius:3px;font-size:.82em;white-space:nowrap;">&#8211; Skipped</span>';
+    }else if(r.status==='dryrun'){
+      statusBadge='<span style="background:#6c757d;color:#fff;padding:1px 7px;border-radius:3px;font-size:.82em;white-space:nowrap;">&#9711; Dry Run</span>';
+    }else{
+      statusBadge='<span style="background:#ccc;color:#333;padding:1px 7px;border-radius:3px;font-size:.82em;white-space:nowrap;">'+r.status+'</span>';
     }
     var msg=r.message||'';
     html+='<tr class="'+cls+'">';
@@ -990,10 +1005,10 @@ function wbsSetupFilterLog(){
     html+='<td>'+r.payment+'</td>';
     html+='<td style="text-align:right;">'+parseFloat(r.gross||0).toFixed(2)+'</td>';
     html+='<td style="text-align:right;">'+parseFloat(r.fee||0).toFixed(2)+'</td>';
-    html+='<td style="text-align:right;font-weight:bold;'+netColor+'"'+netTitle+'>'+netIcon+net.toFixed(2)+' '+r.currency+'</td>';
-    html+='<td style="'+statusCol+'">'+r.status+'</td>';
+    html+='<td style="text-align:right;font-weight:bold;"'+netTip+'>'+net.toFixed(2)+' '+r.currency+'</td>';
+    html+='<td>'+statusBadge+'</td>';
     html+='<td>'+pdf+'</td>';
-    html+='<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:'+(msg.indexOf('mismatch')>=0?'#e67e22':'#555')+'" title="'+msg.replace(/"/g,'&quot;')+'">'+msg+'</td>';
+    html+='<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c05000;" title="'+msg.replace(/"/g,'&quot;')+'">'+msg+'</td>';
     html+='</tr>';
   });
   if(!rows.length)html='<tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
