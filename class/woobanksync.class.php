@@ -745,6 +745,58 @@ class WooBankSync
         return $fields;
     }
 
+    public function createAndMapAmountExtraFields()
+    {
+        require_once DOL_DOCUMENT_ROOT . '/core/class/extrafields.class.php';
+        $extrafields = new ExtraFields($this->db);
+        $created = array();
+        $reused  = array();
+        $failed  = array();
+
+        $toCreate = array(
+            'wbs_gross_amount' => array('label' => 'WooCommerce gross amount', 'const' => 'WBS_EXTRAFIELD_GROSS_CODE'),
+            'wbs_fee_amount'   => array('label' => 'WooCommerce fee amount',   'const' => 'WBS_EXTRAFIELD_FEE_CODE'),
+        );
+
+        $existingFields = $this->getBankExtraFields();
+
+        foreach ($toCreate as $code => $info) {
+            $currentMapping = trim((string) $this->getConst($info['const'], ''));
+            if ($currentMapping !== '') {
+                $reused[] = $code . ' (already mapped to ' . $currentMapping . ')';
+                continue;
+            }
+
+            if (!isset($existingFields[$code])) {
+                $result = $extrafields->addExtraField(
+                    $code,
+                    $info['label'],
+                    'double',
+                    100,
+                    '24,8',
+                    'bank',
+                    0, 0, '', '', 1, '', '1',
+                    'Amount field imported from WooCommerce by WooBankSync',
+                    '', (string) $this->conf->entity, '', '1'
+                );
+                if ($result <= 0) {
+                    $failed[] = $code . ': ' . (!empty($extrafields->error) ? $extrafields->error : $this->db->lasterror());
+                    continue;
+                }
+                $created[] = $code;
+            } else {
+                $reused[] = $code . ' (field already exists)';
+            }
+
+            $this->setConst($info['const'], $code, 'chaine');
+        }
+
+        if (!empty($failed)) {
+            return array(false, 'Failed to create: ' . implode(', ', $failed) . '. Created: ' . implode(', ', $created) . '. Reused/skipped: ' . implode(', ', $reused) . '.');
+        }
+        return array(true, 'Amount custom fields ready. Created: ' . (empty($created) ? 'none' : implode(', ', $created)) . '. Reused/skipped: ' . (empty($reused) ? 'none' : implode(', ', $reused)) . '.');
+    }
+
     public function createAndMapInvoiceBankExtraField()
     {
         $mapped = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
