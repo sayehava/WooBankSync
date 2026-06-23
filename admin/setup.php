@@ -278,6 +278,7 @@ if ($action === 'setup_log_list') {
                 'payment' => (string) ($obj->payment_method ?? ''),
                 'gross'   => (string) ($obj->gross_amount ?? ''),
                 'fee'     => (string) ($obj->fee_amount ?? ''),
+                'net'     => (string) ($obj->payout_amount ?? ''),
                 'currency'=> (string) ($obj->currency ?? ''),
                 'status'  => (string) ($obj->sync_status ?? ''),
                 'message' => (string) ($obj->sync_message ?? ''),
@@ -426,9 +427,9 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
       <table class="liste centpercent" id="wbsLogTable" style="font-size:0.82em;">
         <thead><tr class="liste_titre">
           <th>Date sync</th><th>Order #</th><th>Invoice #</th><th>Payment</th>
-          <th class="right">Gross</th><th class="right">Fee</th><th>Status</th><th>PDF</th><th>Message</th>
+          <th class="right">Gross</th><th class="right">Fee</th><th class="right">Net</th><th>Status</th><th>PDF</th><th>Message</th>
         </tr></thead>
-        <tbody id="wbsLogBody"><tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
+        <tbody id="wbsLogBody"><tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -962,19 +963,22 @@ function wbsSetupFilterLog(){
     var pdf="";
     if(r.pdf_ecm)pdf='<span title="Saved locally">&#128196;</span>';
     else if(r.pdf_url)pdf='<a href="'+r.pdf_url+'" target="_blank" title="Stored URL">&#8599;</a>';
+    var net=parseFloat(r.net||0);
+    var netStr=net!==0?net.toFixed(2):( (parseFloat(r.gross||0)-parseFloat(r.fee||0)).toFixed(2) );
     html+='<tr class="'+cls+'">';
     html+='<td style="white-space:nowrap;">'+r.date.substring(0,16)+'</td>';
     html+='<td>#'+r.number+'</td>';
     html+='<td>'+r.invoice+'</td>';
     html+='<td>'+r.payment+'</td>';
     html+='<td style="text-align:right;">'+parseFloat(r.gross||0).toFixed(2)+'</td>';
-    html+='<td style="text-align:right;">'+parseFloat(r.fee||0).toFixed(2)+' '+r.currency+'</td>';
+    html+='<td style="text-align:right;">'+parseFloat(r.fee||0).toFixed(2)+'</td>';
+    html+='<td style="text-align:right;font-weight:bold;">'+netStr+' '+r.currency+'</td>';
     html+='<td style="'+statusCol+'">'+r.status+'</td>';
     html+='<td>'+pdf+'</td>';
     html+='<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+r.message.replace(/"/g,'&quot;')+'">'+r.message+'</td>';
     html+='</tr>';
   });
-  if(!rows.length)html='<tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
+  if(!rows.length)html='<tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
   document.getElementById("wbsLogBody").innerHTML=html;
 }
 var _wbsPdfStatusAllRows=[];
