@@ -60,9 +60,9 @@ function wbs_bank_select($name, $selected)
     return $html;
 }
 
-function wbs_meta_select($name, $keys, $selected, $placeholder)
+function wbs_meta_select($name, $keys, $selected, $placeholder, $style = 'min-width:180px;')
 {
-    $html = '<select class="flat minwidth300" name="' . dol_escape_htmltag($name) . '">';
+    $html = '<select class="flat" style="' . dol_escape_htmltag($style) . '" name="' . dol_escape_htmltag($name) . '">';
     $html .= '<option value="">' . dol_escape_htmltag($placeholder) . '</option>';
     foreach ((array) $keys as $key) {
         $html .= '<option value="' . dol_escape_htmltag($key) . '"' . ((string) $key === (string) $selected ? ' selected' : '') . '>' . dol_escape_htmltag($key) . '</option>';
@@ -537,13 +537,21 @@ $map = $sync->gatewayMap();
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_map">
-<table class="noborder centpercent">
-<tr class="liste_titre"><td colspan="7">WooCommerce payment methods mapping (active or used)</td></tr>
-<tr class="liste_titre"><th>ID</th><th>Title</th><th>Source</th><th>Orders found</th><th>Dolibarr bank account</th><th>Payout meta key</th><th>Fee meta key</th></tr>
+<div style="overflow-x:auto;">
+<table class="noborder" style="width:100%;min-width:600px;">
+<tr class="liste_titre"><td colspan="6">WooCommerce payment methods mapping (active or used)</td></tr>
+<tr class="liste_titre">
+  <th style="white-space:nowrap;">Gateway ID</th>
+  <th>Title</th>
+  <th style="white-space:nowrap;">Source</th>
+  <th style="white-space:nowrap;text-align:center;">Orders</th>
+  <th>Dolibarr bank account</th>
+  <th style="white-space:nowrap;">Provider fee meta key<br><span style="font-weight:normal;font-size:0.85em;opacity:.7;">e.g. _ppcp_paypal_fees — leave blank for auto-detect</span></th>
+</tr>
 <?php
 if (empty($gateways)) {
 ?>
-<tr><td colspan="7" class="opacitymedium">No payment methods detected yet. Save API settings, then click Refresh.</td></tr>
+<tr><td colspan="6" class="opacitymedium">No payment methods detected yet. Save API settings, then click Refresh.</td></tr>
 <?php
 } else {
     foreach ($gateways as $gateway) {
@@ -553,19 +561,19 @@ if (empty($gateways)) {
         $selected = isset($map[$gid]) ? $map[$gid] : array();
 ?>
 <tr class="oddeven">
-<td><strong><?php echo dol_escape_htmltag($gid); ?></strong></td>
+<td style="white-space:nowrap;"><strong><?php echo dol_escape_htmltag($gid); ?></strong></td>
 <td><?php echo dol_escape_htmltag($gateway['title'] ?? $gid); ?></td>
-<td><?php echo dol_escape_htmltag($gateway['source'] ?? (!empty($gateway['enabled']) ? 'active' : 'historical')); ?></td>
-<td><?php echo (int) ($gateway['orders_count'] ?? 0); ?></td>
+<td style="white-space:nowrap;"><?php echo dol_escape_htmltag($gateway['source'] ?? (!empty($gateway['enabled']) ? 'active' : 'historical')); ?></td>
+<td style="text-align:center;"><?php echo (int) ($gateway['orders_count'] ?? 0); ?></td>
 <td><?php echo wbs_bank_select('WBS_MAP_BANK_' . $safe, $selected['bank_id'] ?? ''); ?></td>
-<td><?php echo wbs_meta_select('WBS_MAP_PAYOUT_' . $safe, $keys, $selected['payout_key'] ?? '', '-- auto / not used --'); ?></td>
-<td><?php echo wbs_meta_select('WBS_MAP_FEE_' . $safe, $keys, $selected['fee_key'] ?? '', '-- auto detect --'); ?></td>
+<td><?php echo wbs_meta_select('WBS_MAP_FEE_' . $safe, $keys, $selected['fee_key'] ?? '', '-- auto detect --', 'min-width:160px;max-width:260px;width:100%;'); ?></td>
 </tr>
 <?php
     }
 }
 ?>
 </table>
+</div>
 <div class="center"><input class="button button-save" type="submit" value="Save mapping"></div>
 </form><br>
 <?php
