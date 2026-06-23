@@ -841,17 +841,14 @@ class WooBankSync
     public function saveGatewayMapFromPost()
     {
         $gateways = $this->getJsonConst('WBS_GATEWAYS_JSON', array());
-        $existing = $this->gatewayMap();
         $map = array();
         foreach ($gateways as $gateway) {
             $gid = (string) $gateway['id'];
             $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $gid);
             $map[$gid] = array(
-                'bank_id' => (int) GETPOST('WBS_MAP_BANK_' . $safe, 'int'),
-                'fee_key' => GETPOST('WBS_MAP_FEE_' . $safe, 'restricthtml'),
-                // payout_key is no longer editable in the UI (payout = gross - fee always)
-                // preserve any previously stored value so legacy code paths still work
-                'payout_key' => (string) ($existing[$gid]['payout_key'] ?? ''),
+                'bank_id'    => (int) GETPOST('WBS_MAP_BANK_' . $safe, 'int'),
+                'fee_key'    => GETPOST('WBS_MAP_FEE_' . $safe, 'restricthtml'),
+                'payout_key' => GETPOST('WBS_MAP_PAYOUT_' . $safe, 'restricthtml'),
             );
         }
         $this->setConst('WBS_GATEWAY_MAP_JSON', json_encode($map), 'chaine');

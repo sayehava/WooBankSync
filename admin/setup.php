@@ -538,20 +538,21 @@ $map = $sync->gatewayMap();
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_map">
 <div style="overflow-x:auto;">
-<table class="noborder" style="width:100%;min-width:600px;">
-<tr class="liste_titre"><td colspan="6">WooCommerce payment methods mapping (active or used)</td></tr>
+<table class="noborder" style="width:100%;min-width:640px;">
+<tr class="liste_titre"><td colspan="7">WooCommerce payment methods mapping (active or used)</td></tr>
 <tr class="liste_titre">
   <th style="white-space:nowrap;">Gateway ID</th>
   <th>Title</th>
   <th style="white-space:nowrap;">Source</th>
   <th style="white-space:nowrap;text-align:center;">Orders</th>
   <th>Dolibarr bank account</th>
-  <th style="white-space:nowrap;">Provider fee meta key<br><span style="font-weight:normal;font-size:0.85em;opacity:.7;">e.g. _ppcp_paypal_fees — leave blank for auto-detect</span></th>
+  <th style="white-space:nowrap;">Fee meta key<br><span style="font-weight:normal;font-size:0.82em;opacity:.7;">e.g. _ppcp_paypal_fees</span></th>
+  <th style="white-space:nowrap;">Payout meta key<br><span style="font-weight:normal;font-size:0.82em;opacity:.7;">net amount from provider, optional</span></th>
 </tr>
 <?php
 if (empty($gateways)) {
 ?>
-<tr><td colspan="6" class="opacitymedium">No payment methods detected yet. Save API settings, then click Refresh.</td></tr>
+<tr><td colspan="7" class="opacitymedium">No payment methods detected yet. Save API settings, then click Refresh.</td></tr>
 <?php
 } else {
     foreach ($gateways as $gateway) {
@@ -566,7 +567,8 @@ if (empty($gateways)) {
 <td style="white-space:nowrap;"><?php echo dol_escape_htmltag($gateway['source'] ?? (!empty($gateway['enabled']) ? 'active' : 'historical')); ?></td>
 <td style="text-align:center;"><?php echo (int) ($gateway['orders_count'] ?? 0); ?></td>
 <td><?php echo wbs_bank_select('WBS_MAP_BANK_' . $safe, $selected['bank_id'] ?? ''); ?></td>
-<td><?php echo wbs_meta_select('WBS_MAP_FEE_' . $safe, $keys, $selected['fee_key'] ?? '', '-- auto detect --', 'min-width:160px;max-width:260px;width:100%;'); ?></td>
+<td><?php echo wbs_meta_select('WBS_MAP_FEE_' . $safe, $keys, $selected['fee_key'] ?? '', '-- auto detect --', 'min-width:140px;max-width:220px;width:100%;'); ?></td>
+<td><?php echo wbs_meta_select('WBS_MAP_PAYOUT_' . $safe, $keys, $selected['payout_key'] ?? '', '-- not configured --', 'min-width:140px;max-width:220px;width:100%;'); ?></td>
 </tr>
 <?php
     }
