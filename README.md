@@ -182,16 +182,10 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 
 ---
 
-
-
-
-
-⸻
-
 ## 📜 License & Attribution
 
-## [!IMPORTANT]
-This project is licensed under AGPL-3.0 with additional attribution requirements.
+> [!IMPORTANT]
+> This project is licensed under AGPL-3.0 with additional attribution requirements.
 
 If you redistribute, fork, or publish a modified version of this project, you must:
 
@@ -203,24 +197,24 @@ If you redistribute, fork, or publish a modified version of this project, you mu
 
 ✅ Make source code available as required by the license
 
-👩‍💻 Original Author: Sayeh Ava Pazouki
+👩‍💻 **Original Author:** Sayeh Ava Pazouki
 
-🔗 Original Repository: https://github.com/sayehava/woobanksync
+🔗 **Original Repository:** https://github.com/sayehava/woobanksync
 
-[!NOTE]
-Full license terms and attribution requirements are available in the LICENSE file.
+> [!NOTE]
+> Full license terms and attribution requirements are available in the LICENSE file.
 
-⸻
+---
 
-❤️ Support Development
+### ❤️ Support Development
 
-If WooBankSync saves you time or helps your business, consider supporting future development.
+☕ **Buy Me a Coffee**  
+https://buymeacoffee.com/sayehava
 
-Platform	Link
-☕ Buy Me a Coffee	https://buymeacoffee.com/sayehava
-💜 Ko-fi	https://ko-fi.com/sayehava
+💜 **Ko-fi**  
+https://ko-fi.com/sayehava
 
-[!TIP]
-Even a small donation helps fund future modules, maintenance, bug fixes, and new features.
+> [!TIP]
+> Even a small donation helps fund future modules, maintenance, bug fixes, and new features.
 
-⸻
+---
