@@ -195,11 +195,9 @@ This project is licensed under AGPL-3.0 with additional attribution requirements
 
 If you redistribute, fork, or publish a modified version of this project, you must:
 
-✅ Keep visible attribution to the original author
+✅ Preserve attribution to the original author in the README file or equivalent primary documentation
 
-✅ Keep a reference to the original project repository
-
-✅ Preserve the attribution notice in the README file or equivalent primary documentation
+✅ Include a reference to the original project repository
 
 ✅ Publish modified versions under the same license terms
 
