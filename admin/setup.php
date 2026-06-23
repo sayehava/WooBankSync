@@ -299,10 +299,7 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
 </form>
  &nbsp; <button class="button" type="button" onclick="wbsSetupOpenLogModal()">View sync log</button>
 </div>
-<?php
-
-// ── Log viewer modal ──────────────────────────────────────────────────────────
-?>
+    <!-- Log viewer modal -->
 <div id="wbsLogModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:95%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;">
     <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:12px;">
@@ -349,9 +346,7 @@ foreach ($fields as $key => $label) {
 </table>
 <div class="center"><input class="button button-save" type="submit" value="Save API settings"></div>
 </form><br>
-<?php
 
-?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_batch_sizes">
@@ -375,9 +370,7 @@ foreach ($batchFields as $key => $settings) {
 </table>
 <div class="center"><input class="button button-save" type="submit" value="Save batch sizes"></div>
 </form><br>
-<?php
 
-?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;margin-right:8px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="refresh">
 <input class="button" type="submit" value="Refresh active and used payment methods from WooCommerce">
@@ -479,10 +472,7 @@ can optionally be stored in Dolibarr bank-entry custom fields so they are visibl
 <input class="button" type="submit" value="Create and map missing amount custom fields automatically">
 </form>
 <br>
-<?php
-
-// ─── Invoice data cache (debug / development) ────────────────────────────
-?>
+    <!-- Invoice data cache (debug / development) -->
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">Invoice data cache &amp; JSON viewer (debugging / development)</td></tr>
 <tr><td class="titlefield">Refresh invoice cache</td><td>
@@ -492,22 +482,17 @@ can optionally be stored in Dolibarr bank-entry custom fields so they are visibl
 &nbsp;&nbsp;&nbsp;<label><input type="radio" name="wbsCacheRange" value="all" onchange="document.getElementById('wbsCacheLimitWrap').style.display='none';"> All synced orders</label>
 </div>
 <button class="button" type="button" onclick="wbsSetupOpenCacheModal()">Refresh invoice cache</button>
-<?php
-?>
+
 <br><span class="opacitymedium">Fetches invoice number and PDF URL from WooCommerce for each synced order and updates the local cache. 
 Also stores the full WooCommerce JSON for use with the viewer below. Use a limited range for speed.</span>
-<?php
-?>
+
 </td></tr>
 <tr><td class="titlefield">View cached order JSON</td><td>
 <button class="button" type="button" onclick="wbsSetupOpenJsonModal()">View cached Woo JSON</button>
 <br><span class="opacitymedium">Shows the raw WooCommerce order JSON stored locally after a cache refresh. Useful for debugging invoice field extraction.</span>
 </td></tr>
 </table>
-<?php
-
-// Cache refresh modal
-?>
+    <!-- Cache refresh modal -->
 <div id="wbsSetupCacheModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10000;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:72%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
     <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
@@ -524,10 +509,7 @@ Also stores the full WooCommerce JSON for use with the viewer below. Use a limit
     </div>
   </div>
 </div>
-<?php
-
-// JSON viewer modal
-?>
+    <!-- JSON viewer modal -->
 <div id="wbsSetupJsonModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10000;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:88%;max-width:1100px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
     <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
@@ -547,9 +529,7 @@ Also stores the full WooCommerce JSON for use with the viewer below. Use a limit
     </div>
   </div>
 </div>
-<?php
 
-?>
 <script>
 var _wbsSetupAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
 var _wbsIndexAjaxUrl = <?php echo json_encode(DOL_URL_ROOT . '/custom/woobanksync/index.php'); ?>;
@@ -735,11 +715,9 @@ if (!empty($diagData)) {
       <button type="button" onclick="document.getElementById('wbsDiagModal').style.display='none';" style="border:none;background:none;font-size:22px;line-height:1;cursor:pointer;color:#666;">&times;</button>
     </div>
     <div style="padding:16px 20px;overflow-y:auto;flex:1;">
-<?php
-?>
+
       <pre id="wbsDiagPre" style="font-size:0.82em;margin:0;white-space:pre-wrap;word-break:break-all;"><?php echo $diagJsonEscaped; ?></pre>
-<?php
-?>
+
     </div>
     <div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:10px;">
       <button class="button" type="button" onclick="wbsDownloadDiag()">Download as JSON</button>
@@ -747,8 +725,7 @@ if (!empty($diagData)) {
     </div>
   </div>
 </div>
-<?php
-?>
+
 <script>
 var _wbsDiagJson = <?php echo $diagJson; ?>;
 function wbsDownloadDiag(){
