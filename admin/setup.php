@@ -769,6 +769,31 @@ document.getElementById("wbsDiagModal").style.display="flex";
 }
 
 ?>
+<?php if (!empty($detectedIntegrations)): ?>
+<br>
+<div id="wbsIntegrationPanel">
+  <div class="liste_titre" style="display:flex;gap:4px;padding:8px 12px;">
+    <?php foreach ($detectedIntegrations as $_intTab): ?>
+    <button type="button" class="button" onclick="wbsShowIntTab('<?php echo dol_escape_js($_intTab->getId()); ?>')"
+      id="wbs-tab-btn-<?php echo dol_escape_htmltag($_intTab->getId()); ?>"><?php echo dol_escape_htmltag($_intTab->getLabel()); ?></button>
+    <?php endforeach; ?>
+  </div>
+  <?php foreach ($detectedIntegrations as $_intTab): ?>
+  <div id="wbs-tab-<?php echo dol_escape_htmltag($_intTab->getId()); ?>" class="wbs-integration-tab">
+    <?php $_intTab->renderSetupHtml($conf, $db, $langs, newToken(), $sync); ?>
+  </div>
+  <?php endforeach; ?>
+</div>
+<script>
+function wbsShowIntTab(id) {
+  document.querySelectorAll('.wbs-integration-tab').forEach(function(el){el.style.display='none';});
+  document.querySelectorAll('[id^="wbs-tab-btn-"]').forEach(function(b){b.classList.remove('buttonDelete');});
+  document.getElementById('wbs-tab-'+id).style.display='block';
+  document.getElementById('wbs-tab-btn-'+id).classList.add('buttonDelete');
+}
+wbsShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
+</script>
+<?php endif; ?>
 <!-- Danger zone -->
 <br>
 <table class="noborder centpercent">
