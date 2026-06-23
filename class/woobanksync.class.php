@@ -667,7 +667,8 @@ class WooBankSync
         $messages[] = 'Log table is ready.';
 
         $columns = array(
-            'payout_amount' => 'double(24,8) DEFAULT 0',
+            'payout_amount'  => 'double(24,8) DEFAULT 0',
+            'woo_payout_raw' => 'double(24,8) DEFAULT NULL',
             'woo_invoice_number' => 'varchar(255) DEFAULT NULL',
             'sync_message' => 'text',
             'date_sync' => 'datetime DEFAULT NULL',
