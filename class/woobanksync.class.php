@@ -134,8 +134,9 @@ class WooBankSync
         if ($fee <= 0) $fee = $this->autoDetectFee($order);
         $calculatedPayout = max(0.0, $gross - $fee);
 
-        // Read the raw payout amount the provider stored in WooCommerce meta (e.g. _ppcp_paypal_net).
-        $wooPayoutRaw = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '');
+        // Read the raw payout amount the provider stored in WooCommerce meta.
+        // Uses extractPayoutFromValue() so serialized PayPal structures (net_amount.value) are handled.
+        $wooPayoutRaw = $this->extractPayoutAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '');
 
         // Sanity-check: reject values that are obviously wrong (equals fee, exceeds gross, negative).
         $wooPayoutSuspicious = $wooPayoutRaw > 0 && (
