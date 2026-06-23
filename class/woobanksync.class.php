@@ -390,9 +390,9 @@ class WooBankSync
 
         $client = $this->client();
         $map = $this->gatewayMap();
-        $germanizedEnabled = (int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') === 1;
+        $hasIntegrations = !empty($this->integrations());
         $requiredFields = array('id', 'number', 'total', 'payment_method', 'billing', 'meta_data');
-        if ($germanizedEnabled) $requiredFields[] = 'invoices';
+        if ($hasIntegrations) $requiredFields[] = 'invoices';
 
         foreach (array_chunk($logRows, 50) as $chunk) {
             $ids = array_map(static function ($r) { return (int) $r->woo_order_id; }, $chunk);
@@ -422,10 +422,14 @@ class WooBankSync
                 $order = $orderById[$orderId];
                 $oldInvoiceNumber = (string) ($logRow->woo_invoice_number ?? '');
                 $oldPdfUrl = (string) ($logRow->woo_invoice_pdf_url ?? '');
-                $newInvoiceNumber = $germanizedEnabled ? $this->extractWooInvoiceNumber($order) : $oldInvoiceNumber;
+                $newInvoiceNumber = $oldInvoiceNumber;
+                $newPdfUrl = $oldPdfUrl;
                 // Difference checking uses only data already present in the Woo order response.
-                // It never calls Germanized document endpoints.
-                $newPdfUrl = $germanizedEnabled ? ($oldPdfUrl !== '' ? $oldPdfUrl : $this->extractWooInvoicePdfUrlFromOrder($order)) : $oldPdfUrl;
+                // It never calls document endpoints (no extra HTTP).
+                foreach ($this->integrations() as $integration) {
+                    if ($newInvoiceNumber === '') $newInvoiceNumber = $integration->extractInvoiceNumber($order);
+                    if ($newPdfUrl === '') $newPdfUrl = $integration->extractPdfUrl($order);
+                }
                 $newBuyerName = $this->extractBuyerName($order);
                 $newGross = $this->normalizeAmount($order['total'] ?? 0);
 
@@ -438,12 +442,12 @@ class WooBankSync
                 $oldFee = (float) ($logRow->fee_amount ?? 0);
                 $oldEcmPath = (string) ($logRow->pdf_ecm_filepath ?? '');
 
-                $invoiceDiff = $germanizedEnabled && $newInvoiceNumber !== $oldInvoiceNumber;
+                $invoiceDiff = $hasIntegrations && $newInvoiceNumber !== $oldInvoiceNumber;
                 $grossDiff = abs($newGross - $oldGross) > 0.005;
                 $feeDiff = abs($newFee - $oldFee) > 0.005;
                 $pdfDownloadEnabled = (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1;
-                $pdfMissing = $germanizedEnabled && $pdfDownloadEnabled && $newPdfUrl !== '' && $oldEcmPath === '';
-                $pdfUrlChanged = $germanizedEnabled && $newPdfUrl !== $oldPdfUrl;
+                $pdfMissing = $hasIntegrations && $pdfDownloadEnabled && $newPdfUrl !== '' && $oldEcmPath === '';
+                $pdfUrlChanged = $hasIntegrations && $newPdfUrl !== $oldPdfUrl;
 
                 // Keep only the reconciliation fields current. Full JSON refresh is a separate action.
                 $this->upsertOrderCache($orderId, (string) $logRow->woo_order_number, $newInvoiceNumber, $newPdfUrl, $oldEcmPath);
