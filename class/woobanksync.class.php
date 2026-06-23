@@ -132,9 +132,33 @@ class WooBankSync
         $bankId = (int) $gatewayConfig['bank_id'];
         $fee = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '');
         if ($fee <= 0) $fee = $this->autoDetectFee($order);
-        $payout = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '');
-        $calculatedPayout = max(0, $gross - $fee);
-        if ($payout <= 0 || $payout > $gross || ($fee > 0 && $payout <= $fee)) $payout = $calculatedPayout;
+        $calculatedPayout = max(0.0, $gross - $fee);
+
+        // Read the raw payout amount the provider stored in WooCommerce meta (e.g. _ppcp_paypal_net).
+        $wooPayoutRaw = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '');
+
+        // Sanity-check: reject values that are obviously wrong (equals fee, exceeds gross, negative).
+        $wooPayoutSuspicious = $wooPayoutRaw > 0 && (
+            $wooPayoutRaw > $gross ||
+            ($fee > 0 && abs($wooPayoutRaw - $fee) < 0.005)
+        );
+
+        if ($wooPayoutRaw > 0 && !$wooPayoutSuspicious) {
+            $payout = $wooPayoutRaw;
+        } else {
+            $payout = $calculatedPayout;
+            if ($wooPayoutSuspicious) $wooPayoutRaw = 0.0; // do not store suspicious raw value
+        }
+
+        // Payout match status: used to generate the log message and drive UI colour coding.
+        // 'ok'        — WC payout available and matches calculated (green)
+        // 'mismatch'  — WC payout available but differs from calculated (amber)
+        // 'no_source' — no payout meta key configured; calculated value used (neutral)
+        if ($wooPayoutRaw > 0) {
+            $payoutMatch = (abs($wooPayoutRaw - $calculatedPayout) < 0.005) ? 'ok' : 'mismatch';
+        } else {
+            $payoutMatch = 'no_source';
+        }
 
         $dryRun = (int) $this->getConst('WBS_DRY_RUN', '0') === 1;
         $buyerName = $this->extractBuyerName($order);
@@ -163,12 +187,20 @@ class WooBankSync
         }
 
         $status = $dryRun ? 'dryrun' : 'synced';
-        $message = ($dryRun ? '[DRY RUN] ' : '') . 'Synced Woo order #' . $orderNumber . ' gross=' . price($gross) . ' fee=' . price($fee) . ' net=' . price($payout) . ' gateway=' . $paymentMethod . ($mappedPaymentMethod !== $paymentMethod ? ' mapped_to=' . $mappedPaymentMethod : '');
-        $this->insertLog($order, $bankId, $gross, $fee, $bankLineId, 0, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath);
+        if ($dryRun) {
+            $message = '[DRY RUN] gross=' . price2num($gross, 'MT') . ' fee=' . price2num($fee, 'MT') . ' net=' . price2num($payout, 'MT');
+        } elseif ($payoutMatch === 'mismatch') {
+            $message = 'Payout mismatch: WooCommerce=' . price2num($wooPayoutRaw, 'MT') . ' calculated=' . price2num($calculatedPayout, 'MT') . ' — using WooCommerce value';
+        } else {
+            $message = '';
+        }
+        $this->insertLog($order, $bankId, $gross, $fee, $bankLineId, 0, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath, $wooPayoutRaw);
         $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $pdfEcmFilepath, $order);
         $this->db->commit();
 
-        return array('status' => 'imported', 'message' => $message);
+        $returnMsg = 'Synced Woo order #' . $orderNumber . ' gross=' . price2num($gross, 'MT') . ' fee=' . price2num($fee, 'MT') . ' net=' . price2num($payout, 'MT');
+        if ($payoutMatch === 'mismatch') $returnMsg .= ' [payout mismatch]';
+        return array('status' => 'imported', 'message' => $returnMsg);
     }
 
     public function refreshWooDiscovery()
@@ -2172,7 +2204,7 @@ class WooBankSync
         return 0;
     }
 
-    private function insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber = '', $payoutAmount = 0, $pdfUrl = '', $pdfEcmFilepath = '')
+    private function insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber = '', $payoutAmount = 0, $pdfUrl = '', $pdfEcmFilepath = '', $wooPayoutRaw = 0.0)
     {
         $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log');
         $data = array(
@@ -2185,6 +2217,7 @@ class WooBankSync
             'gross_amount' => price2num($gross, 'MT'),
             'fee_amount' => price2num($fee, 'MT'),
             'payout_amount' => price2num($payoutAmount, 'MT'),
+            'woo_payout_raw' => $wooPayoutRaw > 0 ? price2num($wooPayoutRaw, 'MT') : 'NULL',
             'currency' => "'" . $this->db->escape((string) ($order['currency'] ?? 'EUR')) . "'",
             'bank_line_id_gross' => (int) $bankLineGross,
             'bank_line_id_fee' => (int) $bankLineFee,
