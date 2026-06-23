@@ -110,6 +110,10 @@ if ($action === 'download_pdf_single') {
     exit;
 }
 
+require_once __DIR__ . '/helpers/WbsIntegrationManager.php';
+$_wbsManager = new WbsIntegrationManager($db, $conf);
+$hasPdfIntegration = !empty($_wbsManager->getDetected());
+
 llxHeader('', $langs->trans('WooBankSync'));
 ?>
 <?php echo load_fiche_titre($langs->trans('WooBankSync'), '<a href="admin/setup.php">Setup</a>', 'bank'); ?>
@@ -119,8 +123,8 @@ llxHeader('', $langs->trans('WooBankSync'));
 <button class="button" type="button" onclick="wbsOpenSyncModal()" style="margin-right:10px;">Sync now</button>
 <button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:4px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
 <label title="Force-update all bank entries even if no change is detected (re-writes labels and amounts)" style="cursor:pointer;margin-right:10px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDiff" style="vertical-align:middle;margin-right:3px;">Force update all</label>
-<button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs via StoreaBill API — no cache dependency">&#128196; Download past invoice PDFs</button>
- <label title="Force re-download all PDFs including those already saved (useful when download failed silently)" style="cursor:pointer;margin-left:4px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
+<?php if ($hasPdfIntegration): ?><button class="button" type="button" onclick="wbsOpenPdfModal()" title="Download missing invoice PDFs via StoreaBill API — no cache dependency">&#128196; Download past invoice PDFs</button>
+ <label title="Force re-download all PDFs including those already saved (useful when download failed silently)" style="cursor:pointer;margin-left:4px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label><?php endif; ?>
 <br>
 <?php
 
@@ -139,23 +143,25 @@ $resql = $db->query($sql);
 ?>
 <div class="div-table-responsive-no-min">
 <table class="liste centpercent">
-<tr class="liste_titre"><th>Date sync</th><th>Woo order</th><th>Invoice</th><th>PDF</th><th>Gateway</th><th class="right">Gross</th><th class="right">Fee</th><th class="right">Payout</th><th>Status</th><th>Message</th></tr>
+<tr class="liste_titre"><th>Date sync</th><th>Woo order</th><th>Invoice</th><?php if ($hasPdfIntegration): ?><th>PDF</th><?php endif; ?><th>Gateway</th><th class="right">Gross</th><th class="right">Fee</th><th class="right">Payout</th><th>Status</th><th>Message</th></tr>
 <?php
 if ($resql) {
     while ($obj = $db->fetch_object($resql)) {
-        if (!empty($obj->pdf_ecm_filepath)) {
-            $pdfLink = '<a href="' . DOL_URL_ROOT . '/document.php?modulepart=ecm&file=' . urlencode($obj->pdf_ecm_filepath) . '" target="_blank" title="Downloaded — stored in Dolibarr ECM">&#128196;&nbsp;PDF</a>';
-        } elseif (!empty($obj->woo_invoice_pdf_url)) {
-            $pdfLink = '<a href="' . dol_escape_htmltag($obj->woo_invoice_pdf_url) . '" target="_blank" title="Not yet downloaded — opens directly from WooCommerce">&#8599;&nbsp;PDF</a>';
-        } else {
-            $pdfLink = '';
+        if ($hasPdfIntegration) {
+            if (!empty($obj->pdf_ecm_filepath)) {
+                $pdfLink = '<a href="' . DOL_URL_ROOT . '/document.php?modulepart=ecm&file=' . urlencode($obj->pdf_ecm_filepath) . '" target="_blank" title="Downloaded — stored in Dolibarr ECM">&#128196;&nbsp;PDF</a>';
+            } elseif (!empty($obj->woo_invoice_pdf_url)) {
+                $pdfLink = '<a href="' . dol_escape_htmltag($obj->woo_invoice_pdf_url) . '" target="_blank" title="Not yet downloaded — opens directly from WooCommerce">&#8599;&nbsp;PDF</a>';
+            } else {
+                $pdfLink = '';
+            }
         }
 ?>
 <tr class="oddeven">
 <td><?php echo dol_print_date($db->jdate($obj->date_sync), 'dayhour'); ?></td>
 <td><?php echo dol_escape_htmltag($obj->woo_order_number); ?></td>
 <td><?php echo dol_escape_htmltag($obj->woo_invoice_number ?? ''); ?></td>
-<td><?php echo $pdfLink; ?></td>
+<?php if ($hasPdfIntegration): ?><td><?php echo $pdfLink; ?></td><?php endif; ?>
 <td><?php echo dol_escape_htmltag($obj->payment_method); ?></td>
 <td class="right"><?php echo price($obj->gross_amount); ?> <?php echo dol_escape_htmltag($obj->currency); ?></td>
 <td class="right"><?php echo price($obj->fee_amount); ?> <?php echo dol_escape_htmltag($obj->currency); ?></td>
@@ -174,8 +180,8 @@ if ($resql) {
 </table></div>
 <?php
 
-// ── PDF download modal ────────────────────────────────────────────────────────
-?>
+<?php if ($hasPdfIntegration): ?>
+<!-- PDF download modal — only rendered when a PDF-capable integration is detected -->
 <div id="wbsPdfModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10000;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:82%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
 
@@ -200,6 +206,7 @@ if ($resql) {
 
   </div>
 </div>
+<?php endif; ?>
 
 <div id="wbsSyncModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:10003;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:84%;max-width:900px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.28);">
@@ -334,6 +341,7 @@ function wbsRunDifferenceBatch(orders, batchSize, offset, updated, unchanged, er
         });
 }
 
+<?php if ($hasPdfIntegration): ?>
 function wbsOpenPdfModal() {
     var force = document.getElementById('wbsForceDownload').checked ? '1' : '0';
     var modal = document.getElementById('wbsPdfModal');
@@ -359,9 +367,9 @@ function wbsOpenPdfModal() {
                 var row = document.createElement('div');
                 row.id = 'wbs-row-' + o.id;
                 row.style.cssText = 'padding:7px 0;border-bottom:1px solid #f2f2f2;display:flex;flex-direction:column;gap:2px;';
-                row.innerHTML = '<div style="display:flex;align-items:center;gap:10px;"><span id="wbs-icon-' + o.id + '" style="font-size:1.15em;min-width:1.4em;text-align:center;">⏳</span>'
-                    + '<span style="flex:1;">#' + wbsEsc(o.number) + (o.invoice ? ' &ndash; ' + wbsEsc(o.invoice) : '') + '</span></div>'
-                    + '<pre id="wbs-note-' + o.id + '" style="font-size:0.75em;color:#888;margin:0 0 0 1.8em;white-space:pre-wrap;word-break:break-all;"></pre>';
+                row.innerHTML = '<div style=”display:flex;align-items:center;gap:10px;”><span id=”wbs-icon-' + o.id + '” style=”font-size:1.15em;min-width:1.4em;text-align:center;”>⏳</span>'
+                    + '<span style=”flex:1;”>#' + wbsEsc(o.number) + (o.invoice ? ' &ndash; ' + wbsEsc(o.invoice) : '') + '</span></div>'
+                    + '<pre id=”wbs-note-' + o.id + '” style=”font-size:0.75em;color:#888;margin:0 0 0 1.8em;white-space:pre-wrap;word-break:break-all;”></pre>';
                 document.getElementById('wbsPdfList').appendChild(row);
             });
             wbsDownloadNext(orders, 0, 0, 0, force);
@@ -413,6 +421,7 @@ function wbsDownloadNext(orders, idx, ok, fail, force) {
             wbsDownloadNext(orders, idx + 1, ok, fail, force);
         });
 }
+<?php endif; ?>
 
 function wbsEsc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
