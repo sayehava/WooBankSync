@@ -1209,11 +1209,47 @@ class WooBankSync
         foreach (($order['meta_data'] ?? array()) as $meta) {
             $key = strtolower((string) ($meta['key'] ?? ''));
             if (strpos($key, 'fee') !== false || strpos($key, 'fees') !== false || strpos($key, 'gebuehr') !== false || strpos($key, 'gebühr') !== false) {
-                $amount = abs($this->normalizeAmount($meta['value'] ?? 0));
+                $amount = $this->extractFeeFromValue($meta['value'] ?? null);
                 if ($amount > 0) $candidates[] = $amount;
             }
         }
         return !empty($candidates) ? max($candidates) : 0.0;
+    }
+
+    private function maybeUnserialize($value)
+    {
+        if (!is_string($value)) return $value;
+        $v = trim($value);
+        if ($v === '' || !preg_match('/^[abisd]:/', $v)) return $value;
+        $result = @unserialize($v);
+        return ($result !== false) ? $result : $value;
+    }
+
+    private function extractFeeFromValue($value)
+    {
+        $value = $this->maybeUnserialize($value);
+        if (is_array($value)) {
+            // PayPal ppcp: {paypal_fee: {value: '3.53'}}
+            foreach (array('paypal_fee', 'fee', 'fee_amount', 'transaction_fee') as $k) {
+                if (isset($value[$k])) return abs($this->normalizeAmount($value[$k]));
+            }
+            return abs($this->normalizeAmount($value));
+        }
+        return abs($this->normalizeAmount($value));
+    }
+
+    private function extractPayoutFromValue($value)
+    {
+        $value = $this->maybeUnserialize($value);
+        if (is_array($value)) {
+            // PayPal ppcp: {net_amount: {value: '101.37'}}
+            foreach (array('net_amount', 'net', 'payout', 'payout_amount', 'settlement_amount') as $k) {
+                if (isset($value[$k])) return abs($this->normalizeAmount($value[$k]));
+            }
+            // Last resort: if the array has a single numeric-ish value key, use it
+            return abs($this->normalizeAmount($value));
+        }
+        return abs($this->normalizeAmount($value));
     }
 
     private function extractAmountFromConfiguredKey($order, $key)
@@ -1221,7 +1257,21 @@ class WooBankSync
         $key = trim((string) $key);
         if ($key === '') return 0.0;
         foreach (($order['meta_data'] ?? array()) as $meta) {
-            if (strcasecmp((string) ($meta['key'] ?? ''), $key) === 0) return abs($this->normalizeAmount($meta['value'] ?? 0));
+            if (strcasecmp((string) ($meta['key'] ?? ''), $key) === 0) {
+                return $this->extractFeeFromValue($meta['value'] ?? null);
+            }
+        }
+        return 0.0;
+    }
+
+    private function extractPayoutAmountFromConfiguredKey($order, $key)
+    {
+        $key = trim((string) $key);
+        if ($key === '') return 0.0;
+        foreach (($order['meta_data'] ?? array()) as $meta) {
+            if (strcasecmp((string) ($meta['key'] ?? ''), $key) === 0) {
+                return $this->extractPayoutFromValue($meta['value'] ?? null);
+            }
         }
         return 0.0;
     }
