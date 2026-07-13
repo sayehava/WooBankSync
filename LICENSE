@@ -1,8 +1,5 @@
                   Copyright (C) 2026 Sayeh Ava Pazouki
 
-This software is licensed under the GNU Affero General Public License v3.0
-with additional attribution requirements described below.
-
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
@@ -622,22 +619,6 @@ Program, unless a warranty or assumption of liability accompanies a
 copy of the Program in return for a fee.
 
                      END OF TERMS AND CONDITIONS
-
-                  ADDITIONAL ATTRIBUTION REQUIREMENTS
-
-In addition to the terms of the GNU Affero General Public License version 3,
-any public redistribution of this software, modified or unmodified, must
-include visible attribution to the original author and the original project
-in the README file or equivalent primary project documentation.
-
-The attribution must include:
-
-Original Author: Sayeh Ava Pazouki
-Original Project: https://github.com/sayehava/woobanksync
-
-Modified versions may add additional authors and contributors, but attribution
-to the original author and the original project must not be removed, hidden,
-or obscured.
 
             How to Apply These Terms to Your New Programs
 

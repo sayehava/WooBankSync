@@ -182,27 +182,9 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 
 ---
 
-## 📜 License & Attribution
+## 📜 License
 
-> [!IMPORTANT]
-> This project is licensed under AGPL-3.0 with additional attribution requirements.
-
-If you redistribute, fork, or publish a modified version of this project, you must:
-
-✅ Preserve attribution to the original author in the README file or equivalent primary documentation
-
-✅ Include a reference to the original project repository
-
-✅ Publish modified versions under the same license terms
-
-✅ Make source code available as required by the license
-
-👩‍💻 **Original Author:** Sayeh Ava Pazouki
-
-🔗 **Original Repository:** https://github.com/sayehava/woobanksync
-
-> [!NOTE]
-> Full license terms and attribution requirements are available in the LICENSE file.
+This project is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0). See the [LICENSE](LICENSE) file for the full text.
 
 ---
 
