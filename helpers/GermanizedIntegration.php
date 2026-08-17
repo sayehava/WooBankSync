@@ -50,6 +50,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         // Any synced order that has an invoice number = Germanized was used before.
         $r = $this->db->query('SELECT rowid FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND connector='woocommerce'"
             . " AND woo_invoice_number IS NOT NULL AND woo_invoice_number != '' LIMIT 1");
         if ($r && $this->db->fetch_object($r)) return true;
 
@@ -271,7 +272,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $rows = array();
         $e    = (int) $this->conf->entity;
         $sql  = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
-            . " WHERE entity=$e AND sync_status='synced' ORDER BY rowid DESC";
+            . " WHERE entity=$e AND connector='woocommerce' AND sync_status='synced' ORDER BY rowid DESC";
         $resql = $this->db->query($sql);
         if (!$resql) return $rows;
         while ($obj = $this->db->fetch_object($resql)) {
@@ -351,6 +352,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         // Step 2: scan ECM filepath column
         $sql = 'SELECT pdf_ecm_filepath FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
+            . " AND connector='woocommerce'"
             . " AND pdf_ecm_filepath IS NOT NULL AND pdf_ecm_filepath != '' LIMIT 20";
         $res = $this->db->query($sql);
         if ($res) {
@@ -377,7 +379,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $client   = new WooCommerceClient($url, $key, $secret);
         $syncedIds = array();
         $rIds = $this->db->query('SELECT DISTINCT woo_order_id FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
-            . ' WHERE entity=' . (int) $this->conf->entity . " AND sync_status='synced' ORDER BY rowid DESC LIMIT 5");
+            . ' WHERE entity=' . (int) $this->conf->entity . " AND connector='woocommerce' AND sync_status='synced' ORDER BY rowid DESC LIMIT 5");
         if ($rIds) while ($obj = $this->db->fetch_object($rIds)) $syncedIds[] = (string) $obj->woo_order_id;
 
         $ordersToProbe = !empty($syncedIds) ? $client->getOrdersByIds($syncedIds) : $client->getRecentOrders(5);
@@ -720,7 +722,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $this->addDataIfColumn($data, $fields, 'entity', (int) $this->conf->entity, true);
         $this->addDataIfColumn($data, $fields, 'fk_user_c', isset($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : 0, true);
         $this->addDataIfColumn($data, $fields, 'date_c', $this->sqlDateNow(), false);
-        $this->addDataIfColumn($data, $fields, 'note', "'" . $this->db->escape('WooBankSync order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'note', "'" . $this->db->escape('Dolli Commerce Hub order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
         $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('woobanksync woo ' . $orderId) . "'", false);
         $this->addDataIfColumn($data, $fields, 'mimetype', "'application/pdf'", false);
         $this->addDataIfColumn($data, $fields, 'status', 1, true);
@@ -812,7 +814,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         if ($action === 'setup_pdf_status') {
             if (!$GLOBALS['user']->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit; }
             $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
-                . ' WHERE entity=' . (int) $conf->entity . " AND sync_status='synced' ORDER BY rowid DESC LIMIT 500";
+                . ' WHERE entity=' . (int) $conf->entity . " AND connector='woocommerce' AND sync_status='synced' ORDER BY rowid DESC LIMIT 500";
             $rows  = array();
             $resql = $db->query($sql);
             if ($resql) {
