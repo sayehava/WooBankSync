@@ -6,6 +6,8 @@ class WbsWooCommerceClient
     private $consumerKey;
     private $consumerSecret;
     public $error = '';
+    public $lastTotalItems = 0;
+    public $lastTotalPages = 0;
 
     public function __construct($baseUrl, $consumerKey, $consumerSecret)
     {
@@ -97,6 +99,26 @@ class WbsWooCommerceClient
         return $this->request('GET', '/wp-json/wc/v3/payment_gateways', array());
     }
 
+    public function getProducts($page = 1, $perPage = 100)
+    {
+        return $this->request('GET', '/wp-json/wc/v3/products', array(
+            'page' => max(1, (int) $page),
+            'per_page' => max(1, min(100, (int) $perPage)),
+            'orderby' => 'id',
+            'order' => 'asc',
+        ));
+    }
+
+    public function getProductVariations($productId, $page = 1, $perPage = 100)
+    {
+        return $this->request('GET', '/wp-json/wc/v3/products/' . (int) $productId . '/variations', array(
+            'page' => max(1, (int) $page),
+            'per_page' => max(1, min(100, (int) $perPage)),
+            'orderby' => 'id',
+            'order' => 'asc',
+        ));
+    }
+
     public function testConnection()
     {
         $result = $this->request('GET', '/wp-json/wc/v3/system_status', array());
@@ -106,6 +128,8 @@ class WbsWooCommerceClient
     private function request($method, $path, $params = array())
     {
         $this->error = '';
+        $this->lastTotalItems = 0;
+        $this->lastTotalPages = 0;
         if (empty($this->baseUrl) || empty($this->consumerKey) || empty($this->consumerSecret)) {
             $this->error = 'WooCommerce URL, consumer key or consumer secret is missing.';
             return false;
@@ -123,7 +147,18 @@ class WbsWooCommerceClient
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($ch, CURLOPT_TIMEOUT, 90);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Dolibarr WooBankSync/1.1');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Dolli-Commerce-Hub/2.0');
+        curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($curl, $headerLine) {
+            $length = strlen($headerLine);
+            $parts = explode(':', $headerLine, 2);
+            if (count($parts) !== 2) return $length;
+
+            $name = strtolower(trim($parts[0]));
+            $value = trim($parts[1]);
+            if ($name === 'x-wp-total') $this->lastTotalItems = max(0, (int) $value);
+            if ($name === 'x-wp-totalpages') $this->lastTotalPages = max(0, (int) $value);
+            return $length;
+        });
 
         $body = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
