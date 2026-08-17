@@ -1,13 +1,15 @@
 CREATE TABLE IF NOT EXISTS llx_woobanksync_log (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   entity integer NOT NULL DEFAULT 1,
-  woo_order_id varchar(64) NOT NULL,
+  connector varchar(32) NOT NULL DEFAULT 'woocommerce',
+  woo_order_id varchar(128) NOT NULL,
   woo_order_number varchar(128) DEFAULT NULL,
   woo_transaction_id varchar(255) DEFAULT NULL,
   payment_method varchar(128) DEFAULT NULL,
   dolibarr_bank_account_id integer DEFAULT NULL,
   gross_amount double(24,8) DEFAULT 0,
   fee_amount double(24,8) DEFAULT 0,
+  fee_source varchar(128) DEFAULT NULL,
   payout_amount double(24,8) DEFAULT 0,
   currency varchar(8) DEFAULT NULL,
   bank_line_id_gross integer DEFAULT NULL,
@@ -18,5 +20,5 @@ CREATE TABLE IF NOT EXISTS llx_woobanksync_log (
   date_order datetime DEFAULT NULL,
   date_sync datetime DEFAULT NULL,
   tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_woobanksync_entity_order (entity, woo_order_id)
+  UNIQUE KEY uk_dch_entity_connector_order (entity, connector, woo_order_id)
 ) ENGINE=innodb;
