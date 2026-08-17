@@ -40,7 +40,9 @@ if (!function_exists('wbs_set_const_safe')) {
 }
 
 $action = GETPOST('action', 'aZ09');
-$sync = new WooBankSync($db, $conf, $langs);
+$sync = new DolliCommerceHub($db, $conf, $langs);
+list($autoSchemaOk, $autoSchemaMessage) = $sync->runDatabaseChecks(); // Safe, idempotent lazy migration for uploaded upgrades.
+if (!$autoSchemaOk) setEventMessages($autoSchemaMessage, null, 'errors');
 $manager = new WbsIntegrationManager($db, $conf);
 $detectedIntegrations = $manager->getDetected();
 
@@ -104,6 +106,115 @@ function wbs_ecm_folder_select($name, $selected)
     return $html;
 }
 
+function dch_warehouse_select($name, $selected, $warehouses, $formId = '')
+{
+    $html = '<select class="flat" style="max-width:340px;width:100%;" name="' . dol_escape_htmltag($name) . '"' . ($formId !== '' ? ' form="' . dol_escape_htmltag($formId) . '"' : '') . '>';
+    $html .= '<option value="">-- connector default warehouse --</option>';
+    foreach ((array) $warehouses as $warehouse) {
+        $value = (string) $warehouse['id'];
+        $label = trim((string) $warehouse['ref'] . (!empty($warehouse['label']) ? ' - ' . $warehouse['label'] : ''));
+        $html .= '<option value="' . dol_escape_htmltag($value) . '"' . ($value === (string) $selected ? ' selected' : '') . '>' . dol_escape_htmltag($label) . '</option>';
+    }
+    return $html . '</select>';
+}
+
+function dch_product_select($name, $selected, $products, $formId = '')
+{
+    $html = '<select class="flat" style="max-width:360px;width:100%;" name="' . dol_escape_htmltag($name) . '"' . ($formId !== '' ? ' form="' . dol_escape_htmltag($formId) . '"' : '') . '>';
+    $html .= '<option value="">-- choose Dolibarr product --</option>';
+    foreach ((array) $products as $product) {
+        $value = (string) $product['id'];
+        $label = trim((string) $product['ref'] . ' - ' . (string) $product['label']);
+        $html .= '<option value="' . dol_escape_htmltag($value) . '"' . ($value === (string) $selected ? ' selected' : '') . '>' . dol_escape_htmltag($label) . '</option>';
+    }
+    return $html . '</select>';
+}
+
+if ($action === 'save_connector') {
+    $connector = strtolower((string) GETPOST('connector', 'alpha'));
+    $allowed = array('woocommerce', 'amazon', 'sumup');
+    if (!in_array($connector, $allowed, true)) {
+        setEventMessages('Unknown connector.', null, 'errors');
+    } else {
+        $prefix = 'DCH_' . strtoupper($connector) . '_';
+        wbs_set_const_safe($db, $prefix . 'ENABLED', GETPOST('enabled', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
+        wbs_set_const_safe($db, $prefix . 'STOCK_ENABLED', GETPOST('stock_enabled', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
+        wbs_set_const_safe($db, $prefix . 'WAREHOUSE_ID', (string) max(0, (int) GETPOST('warehouse_id', 'int')), 'chaine', 0, '', $conf->entity);
+
+        if ($connector === 'amazon') {
+            foreach (array('LWA_CLIENT_ID', 'SELLER_ID', 'MARKETPLACE_IDS', 'SYNC_FROM_DATE') as $suffix) {
+                wbs_set_const_safe($db, $prefix . $suffix, GETPOST(strtolower($suffix), 'restricthtml'), 'chaine', 0, '', $conf->entity);
+            }
+            foreach (array('LWA_CLIENT_SECRET', 'REFRESH_TOKEN') as $suffix) {
+                $value = GETPOST(strtolower($suffix), 'restricthtml');
+                if ($value !== '') wbs_set_const_safe($db, $prefix . $suffix, $value, 'password', 0, '', $conf->entity);
+            }
+            $region = strtolower((string) GETPOST('region', 'alpha'));
+            if (!in_array($region, array('eu', 'na', 'fe'), true)) $region = 'eu';
+            wbs_set_const_safe($db, $prefix . 'REGION', $region, 'chaine', 0, '', $conf->entity);
+            wbs_set_const_safe($db, $prefix . 'FINANCE_ENABLED', GETPOST('finance_enabled', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
+        } elseif ($connector === 'sumup') {
+            $token = GETPOST('access_token', 'restricthtml');
+            if ($token !== '') wbs_set_const_safe($db, $prefix . 'ACCESS_TOKEN', $token, 'password', 0, '', $conf->entity);
+            foreach (array('MERCHANT_CODE', 'SYNC_FROM_DATE') as $suffix) {
+                wbs_set_const_safe($db, $prefix . $suffix, GETPOST(strtolower($suffix), 'restricthtml'), 'chaine', 0, '', $conf->entity);
+            }
+            $posMode = strtolower((string) GETPOST('pos_duplicate_mode', 'alpha'));
+            if (!in_array($posMode, array('off', 'all', 'reference'), true)) $posMode = 'off';
+            wbs_set_const_safe($db, $prefix . 'POS_DUPLICATE_MODE', $posMode, 'chaine', 0, '', $conf->entity);
+            wbs_set_const_safe($db, $prefix . 'POS_REFERENCE_PREFIXES', GETPOST('pos_reference_prefixes', 'restricthtml'), 'chaine', 0, '', $conf->entity);
+        }
+        list($schemaOk, $schemaMessage) = $sync->runDatabaseChecks();
+        setEventMessages(ucfirst($connector) . ' connector settings saved.' . ($schemaOk ? '' : ' ' . $schemaMessage), null, $schemaOk ? 'mesgs' : 'errors');
+    }
+}
+
+if ($action === 'save_channel_finance') {
+    list($ok, $msg) = $sync->saveChannelFinanceMapFromPost(GETPOST('connector', 'alpha'));
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'auto_channel_account') {
+    list($ok, $msg) = $sync->autoCreateChannelAccount(GETPOST('connector', 'alpha'));
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'refresh_woo_catalog') {
+    list($ok, $msg) = $sync->refreshWooCatalog();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'refresh_amazon_catalog') {
+    @set_time_limit(600);
+    list($ok, $msg) = $sync->refreshAmazonCatalog();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'refresh_sumup_catalog') {
+    @set_time_limit(600);
+    list($ok, $msg) = $sync->refreshSumUpCatalog();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'save_stock_recipe') {
+    $catalogId = max(0, (int) GETPOST('catalog_id', 'int'));
+    $mode = (string) GETPOST('stock_mode', 'alpha');
+    $components = array();
+    $componentProducts = isset($_POST['component_product']) && is_array($_POST['component_product']) ? $_POST['component_product'] : array();
+    $componentWarehouses = isset($_POST['component_warehouse']) && is_array($_POST['component_warehouse']) ? $_POST['component_warehouse'] : array();
+    $componentQuantities = isset($_POST['component_quantity']) && is_array($_POST['component_quantity']) ? $_POST['component_quantity'] : array();
+    $componentCount = min(100, max(count($componentProducts), count($componentWarehouses), count($componentQuantities)));
+    for ($i = 0; $i < $componentCount; $i++) {
+        $components[] = array(
+            'product_id' => isset($componentProducts[$i]) ? (int) $componentProducts[$i] : 0,
+            'warehouse_id' => isset($componentWarehouses[$i]) ? (int) $componentWarehouses[$i] : 0,
+            'quantity' => isset($componentQuantities[$i]) ? preg_replace('/[^0-9.,-]/', '', (string) $componentQuantities[$i]) : '',
+        );
+    }
+    list($ok, $msg) = $sync->inventory()->saveRecipe($catalogId, $mode, $components, GETPOST('is_bundle', 'int') ? true : false);
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
 if ($action === 'save_api') {
     $keys = array('WBS_WOO_URL', 'WBS_WOO_CONSUMER_KEY', 'WBS_WOO_CONSUMER_SECRET', 'WBS_SYNC_FROM_DATE', 'WBS_ORDER_STATUSES');
     foreach ($keys as $key) wbs_set_const_safe($db, $key, GETPOST($key, 'restricthtml'), 'chaine', 0, '', $conf->entity);
@@ -148,7 +259,7 @@ if ($action === 'save_docs') {
 if ($action === 'save_amount_fields') {
     wbs_set_const_safe($db, 'WBS_EXTRAFIELD_GROSS_CODE', GETPOST('WBS_EXTRAFIELD_GROSS_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
     wbs_set_const_safe($db, 'WBS_EXTRAFIELD_FEE_CODE', GETPOST('WBS_EXTRAFIELD_FEE_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
-    setEventMessages('Amount custom field mapping saved.', null, 'mesgs');
+    setEventMessages('WooCommerce amount custom field mapping saved.', null, 'mesgs');
 }
 
 if ($action === 'create_amount_extrafields') {
@@ -211,11 +322,13 @@ if ($action === 'setup_log_list') {
         while ($obj = $db->fetch_object($resql)) {
             $rows[] = array(
                 'id'           => (string) ($obj->woo_order_id ?? ''),
+                'connector'    => (string) ($obj->connector ?? 'woocommerce'),
                 'number'       => (string) ($obj->woo_order_number ?? ''),
                 'invoice'      => (string) ($obj->woo_invoice_number ?? ''),
                 'payment'      => (string) ($obj->payment_method ?? ''),
                 'gross'        => (string) ($obj->gross_amount ?? ''),
                 'fee'          => (string) ($obj->fee_amount ?? ''),
+                'fee_source'   => (string) ($obj->fee_source ?? ''),
                 'net'          => (string) ($obj->payout_amount ?? ''),
                 'woo_payout'   => (string) ($obj->woo_payout_raw ?? ''),
                 'currency'     => (string) ($obj->currency ?? ''),
@@ -298,6 +411,7 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
 <input class="button" type="submit" value="Run/update database checks without disabling module">
 </form>
  &nbsp; <button class="button" type="button" onclick="wbsSetupOpenLogModal()">View sync log</button>
+ &nbsp; <a class="button" href="<?php echo DOL_URL_ROOT; ?>/custom/woobanksync/reports.php?mainmenu=woobanksync">Sales analytics</a>
 </div>
     <!-- Log viewer modal -->
 <div id="wbsLogModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
@@ -311,14 +425,89 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
     <div style="overflow:auto;flex:1;">
       <table class="liste centpercent" id="wbsLogTable" style="font-size:0.82em;">
         <thead><tr class="liste_titre">
-          <th>Date sync</th><th>Order #</th><th>Invoice #</th><th>Payment</th>
-          <th class="right">Gross</th><th class="right">Fee</th><th class="right">Net</th><th>Status</th><th>PDF</th><th>Message</th>
+          <th>Date sync</th><th>Channel</th><th>Order #</th><th>Invoice #</th><th>Payment</th>
+          <th class="right">Gross</th><th class="right">Fee</th><th>Fee source</th><th class="right">Net</th><th>Status</th><th>PDF</th><th>Message</th>
         </tr></thead>
-        <tbody id="wbsLogBody"><tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
+        <tbody id="wbsLogBody"><tr><td colspan="12" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
 </div>
+<?php
+$dchWarehouses = $sync->inventory()->getWarehouses();
+$dchConnectorDefinitions = array(
+    'woocommerce' => array('label' => 'WooCommerce', 'description' => 'Online shop orders, payments, invoices and stock'),
+    'amazon' => array('label' => 'Amazon Seller', 'description' => 'Seller orders, listings and stock; Amazon invoices remain in Amazon'),
+    'sumup' => array('label' => 'SumUp', 'description' => 'Card transactions and product lines, with Dolibarr POS duplicate protection'),
+);
+$dchSelectedConnector = strtolower((string) GETPOST('connector_view', 'alpha'));
+if ($dchSelectedConnector === '') $dchSelectedConnector = strtolower((string) GETPOST('connector', 'alpha'));
+if (!isset($dchConnectorDefinitions[$dchSelectedConnector])) $dchSelectedConnector = '';
+?>
+<h2>Sales channel submodules</h2>
+<p class="opacitymedium">This list stays compact as more connectors are added. Activate only the channels you use, then configure one channel at a time.</p>
+<div style="overflow-x:auto;margin-bottom:12px;"><table class="liste centpercent">
+<tr class="liste_titre"><th>Submodule</th><th>Description</th><th>Status</th><th>Stock</th><th></th></tr>
+<?php foreach ($dchConnectorDefinitions as $connectorKey => $connectorDefinition) {
+    $connectorPrefix = 'DCH_' . strtoupper($connectorKey) . '_';
+    $connectorEnabled = $connectorKey === 'woocommerce' && !isset($conf->global->{$connectorPrefix . 'ENABLED'}) ? true : !empty($conf->global->{$connectorPrefix . 'ENABLED'});
+?>
+<tr class="oddeven"><td><strong><?php echo dol_escape_htmltag($connectorDefinition['label']); ?></strong></td><td><?php echo dol_escape_htmltag($connectorDefinition['description']); ?></td><td><?php echo $connectorEnabled ? '<span class="badge badge-status4">Active</span>' : '<span class="badge badge-status0">Inactive</span>'; ?></td><td><?php echo !empty($conf->global->{$connectorPrefix . 'STOCK_ENABLED'}) ? 'Deduction active' : 'Off'; ?></td><td class="right"><a class="button" href="<?php echo dol_escape_htmltag($_SERVER['PHP_SELF'] . '?connector_view=' . $connectorKey); ?>">Configure</a></td></tr>
+<?php } ?>
+</table></div>
+
+<?php if ($dchSelectedConnector !== '') { ?>
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?connector_view=<?php echo dol_escape_htmltag($dchSelectedConnector); ?>" style="border:1px solid #ccc;border-radius:6px;padding:16px;margin-bottom:18px;max-width:900px;">
+  <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="save_connector"><input type="hidden" name="connector" value="<?php echo dol_escape_htmltag($dchSelectedConnector); ?>">
+  <?php $dchSelectedPrefix = 'DCH_' . strtoupper($dchSelectedConnector) . '_'; $dchSelectedDefinition = $dchConnectorDefinitions[$dchSelectedConnector]; ?>
+  <h3 style="margin-top:0;">Configure <?php echo dol_escape_htmltag($dchSelectedDefinition['label']); ?></h3>
+  <p><label><input type="checkbox" name="enabled" value="1"<?php echo ($dchSelectedConnector === 'woocommerce' && !isset($conf->global->{$dchSelectedPrefix . 'ENABLED'})) || !empty($conf->global->{$dchSelectedPrefix . 'ENABLED'}) ? ' checked' : ''; ?>> Submodule active</label> &nbsp; <label><input type="checkbox" name="stock_enabled" value="1"<?php echo !empty($conf->global->{$dchSelectedPrefix . 'STOCK_ENABLED'}) ? ' checked' : ''; ?>> Deduct mapped products from stock</label></p>
+  <?php if ($dchSelectedConnector === 'amazon') { ?>
+    <p><label>LWA client ID<br><input class="flat minwidth500" name="lwa_client_id" value="<?php echo dol_escape_htmltag($conf->global->DCH_AMAZON_LWA_CLIENT_ID ?? ''); ?>"></label></p>
+    <p><label>LWA client secret<br><input class="flat minwidth500" type="password" name="lwa_client_secret" placeholder="Leave blank to keep saved secret"></label></p>
+    <p><label>Refresh token<br><input class="flat minwidth500" type="password" name="refresh_token" placeholder="Leave blank to keep saved token"></label></p>
+    <p><label>Seller ID<br><input class="flat minwidth500" name="seller_id" value="<?php echo dol_escape_htmltag($conf->global->DCH_AMAZON_SELLER_ID ?? ''); ?>"></label></p>
+    <p><label>Marketplace IDs <span class="opacitymedium">(comma-separated)</span><br><input class="flat minwidth500" name="marketplace_ids" value="<?php echo dol_escape_htmltag($conf->global->DCH_AMAZON_MARKETPLACE_IDS ?? ''); ?>"></label></p>
+    <p><label>Region <select class="flat" name="region"><?php foreach (array('eu' => 'Europe', 'na' => 'North America', 'fe' => 'Far East') as $value => $label) { ?><option value="<?php echo $value; ?>"<?php echo ($conf->global->DCH_AMAZON_REGION ?? 'eu') === $value ? ' selected' : ''; ?>><?php echo $label; ?></option><?php } ?></select></label></p>
+    <p><label>Sync from date<br><input class="flat" type="date" name="sync_from_date" value="<?php echo dol_escape_htmltag($conf->global->DCH_AMAZON_SYNC_FROM_DATE ?? ''); ?>"></label></p>
+    <p><label><input type="checkbox" name="finance_enabled" value="1"<?php echo !isset($conf->global->DCH_AMAZON_FINANCE_ENABLED) || !empty($conf->global->DCH_AMAZON_FINANCE_ENABLED) ? ' checked' : ''; ?>> Retrieve exact Amazon expenses and net proceeds through Finances API</label></p>
+    <div class="info">Amazon generates its own invoices. With the current API roles, Dolli Commerce Hub does not request or download Amazon invoice PDFs; the invoice remains available in Amazon Seller Central.</div>
+  <?php } elseif ($dchSelectedConnector === 'sumup') { ?>
+    <p><label>Access token<br><input class="flat minwidth500" type="password" name="access_token" placeholder="Leave blank to keep saved token"></label></p>
+    <p><label>Merchant code<br><input class="flat minwidth500" name="merchant_code" value="<?php echo dol_escape_htmltag($conf->global->DCH_SUMUP_MERCHANT_CODE ?? ''); ?>"></label></p>
+    <p><label>Sync from date<br><input class="flat" type="date" name="sync_from_date" value="<?php echo dol_escape_htmltag($conf->global->DCH_SUMUP_SYNC_FROM_DATE ?? ''); ?>"></label></p>
+    <div class="warning" style="margin:10px 0;"><strong>Existing Dolibarr POS + SumUp module:</strong> when that module already creates the sale, payment and stock movement, enable duplicate protection here. The transaction is still counted in sales analytics, but Dolli Commerce Hub will not create a second bank or stock entry.</div>
+    <?php $dchPosMode = (string) ($conf->global->DCH_SUMUP_POS_DUPLICATE_MODE ?? 'off'); ?>
+    <p><label>POS duplicate protection<br><select class="flat minwidth300" name="pos_duplicate_mode"><option value="off"<?php echo $dchPosMode === 'off' ? ' selected' : ''; ?>>Off — Dolli Commerce Hub owns SumUp imports</option><option value="all"<?php echo $dchPosMode === 'all' ? ' selected' : ''; ?>>Skip all — Dolibarr POS module owns all SumUp sales</option><option value="reference"<?php echo $dchPosMode === 'reference' ? ' selected' : ''; ?>>Skip only matching POS references</option></select></label></p>
+    <p><label>POS reference prefixes <span class="opacitymedium">(comma-separated; reference mode only)</span><br><input class="flat minwidth500" name="pos_reference_prefixes" value="<?php echo dol_escape_htmltag($conf->global->DCH_SUMUP_POS_REFERENCE_PREFIXES ?? ''); ?>" placeholder="POS-, TAKEPOS-, DOLIBARR-"></label></p>
+    <div class="info">SumUp receipts remain in SumUp. No SumUp receipt/invoice PDF download is attempted.</div>
+  <?php } ?>
+  <p><label>Fallback stock warehouse<br><?php echo dch_warehouse_select('warehouse_id', $conf->global->{$dchSelectedPrefix . 'WAREHOUSE_ID'} ?? '', $dchWarehouses); ?></label><br><span class="opacitymedium">Used only when a product recipe component has no explicit warehouse. Per-product warehouses are configured below.</span></p>
+  <button class="button button-save" type="submit">Save <?php echo dol_escape_htmltag($dchSelectedDefinition['label']); ?> settings</button>
+</form>
+<?php if (in_array($dchSelectedConnector, array('amazon', 'sumup'), true)) {
+    $dchFinanceMap = $sync->channelFinanceMap($dchSelectedConnector);
+    $dchFinanceBankId = (int) ($dchFinanceMap[$dchSelectedConnector]['bank_id'] ?? 0);
+    $dchFeeSourceLabel = $dchSelectedConnector === 'amazon' ? 'Amazon Finances API expense breakdowns' : 'SumUp transaction detail fee_amount';
+?>
+<div style="border:1px solid #ccc;border-radius:6px;padding:16px;margin-bottom:18px;max-width:900px;">
+  <h3 style="margin-top:0;">Virtual bank and cost mapping</h3>
+  <p class="opacitymedium">Like WooCommerce gateway mapping, the gross sale, exact provider cost, and net payout are recorded separately. The Dolibarr clearing account receives the net payout.</p>
+  <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?connector_view=<?php echo dol_escape_htmltag($dchSelectedConnector); ?>">
+    <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="save_channel_finance"><input type="hidden" name="connector" value="<?php echo dol_escape_htmltag($dchSelectedConnector); ?>">
+    <table class="noborder centpercent"><tr class="liste_titre"><th>Payment source</th><th>Exact cost source</th><th>Dolibarr virtual/clearing bank</th></tr>
+    <tr><td><strong><?php echo dol_escape_htmltag($dchSelectedDefinition['label']); ?></strong></td><td><?php echo dol_escape_htmltag($dchFeeSourceLabel); ?></td><td><?php echo wbs_bank_select('finance_bank_id', $dchFinanceBankId); ?></td></tr></table>
+    <div class="center"><button class="button button-save" type="submit">Save finance mapping</button></div>
+  </form>
+  <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?connector_view=<?php echo dol_escape_htmltag($dchSelectedConnector); ?>" class="center" style="margin-top:8px;">
+    <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="auto_channel_account"><input type="hidden" name="connector" value="<?php echo dol_escape_htmltag($dchSelectedConnector); ?>">
+    <button class="button" type="submit">Create/reuse and map <?php echo dol_escape_htmltag($dchSelectedDefinition['label']); ?> virtual bank automatically</button>
+  </form>
+</div>
+<?php } ?>
+<?php } else { ?><div class="info" style="margin-bottom:18px;">Choose <strong>Configure</strong> for a sales channel. The module dashboard is separate and no connector configuration is selected by default.</div><?php } ?>
+
+<?php if ($dchSelectedConnector === 'woocommerce') { ?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_api">
@@ -431,20 +620,18 @@ if (empty($gateways)) {
 <div class="center"><input class="button button-save" type="submit" value="Save mapping"></div>
 </form><br>
 <?php
-
 $bankExtraFields  = $sync->getBankExtraFields();
 $mappedGrossField = (string) ($conf->global->WBS_EXTRAFIELD_GROSS_CODE ?? '');
 $mappedFeeField   = (string) ($conf->global->WBS_EXTRAFIELD_FEE_CODE ?? '');
 ?>
-<br>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?connector_view=woocommerce">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_amount_fields">
 <table class="noborder centpercent">
-<tr class="liste_titre"><td colspan="2">Amount custom fields (gross and fee)</td></tr>
+<tr class="liste_titre"><td colspan="2">WooCommerce amount custom fields (gross and fee)</td></tr>
 <tr><td colspan="2" class="opacitymedium" style="padding-bottom:8px;">
-Each bank entry is created with <strong>net amount received</strong> (gross &minus; fee). The original gross and fee
-can optionally be stored in Dolibarr bank-entry custom fields so they are visible in reports and exports.
+Each WooCommerce bank entry is created with <strong>net amount received</strong> (gross &minus; fee). The original gross and fee
+can optionally be stored in Dolibarr bank-entry custom fields for WooCommerce reports and exports.
 </td></tr>
 <tr><td class="titlefield">Gross amount field</td><td>
 <select class="flat minwidth300" name="WBS_EXTRAFIELD_GROSS_CODE">
@@ -462,16 +649,104 @@ can optionally be stored in Dolibarr bank-entry custom fields so they are visibl
 <option value="<?php echo dol_escape_htmltag($code); ?>"<?php echo $code === $mappedFeeField ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($fieldLabel . ' (' . $code . ')'); ?></option>
 <?php } ?>
 </select>
-<br><span class="opacitymedium">Custom field that will receive the payment processor fee (Gebühr).</span>
+<br><span class="opacitymedium">Custom field that will receive the WooCommerce payment processor fee (Gebühr).</span>
 </td></tr>
 </table>
-<div class="center"><input class="button button-save" type="submit" value="Save amount field mapping"></div>
+<div class="center"><input class="button button-save" type="submit" value="Save WooCommerce amount field mapping"></div>
 </form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="center" style="margin-top:6px;">
+<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?connector_view=woocommerce" class="center" style="margin-top:6px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_amount_extrafields">
-<input class="button" type="submit" value="Create and map missing amount custom fields automatically">
-</form>
-<br>
+<input class="button" type="submit" value="Create and map missing WooCommerce amount fields automatically">
+</form><br>
+<?php } ?>
+<?php
+
+$dchCatalogConnector = strtolower((string) GETPOST('catalog_connector', 'alpha'));
+if (!isset($dchConnectorDefinitions[$dchCatalogConnector])) $dchCatalogConnector = '';
+$dchCatalog = $sync->inventory()->getCatalog($dchCatalogConnector);
+$dchProducts = $sync->inventory()->getDolibarrProducts();
+?>
+<div style="margin:18px 0 8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+  <h2 style="margin:0;flex:1;">Product and bundle stock recipes</h2>
+  <form method="GET" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="margin:0;">
+    <label>Channel <select class="flat" name="catalog_connector" onchange="this.form.submit()"><option value="">All active catalogues</option><?php foreach ($dchConnectorDefinitions as $connectorKey => $connectorDefinition) { ?><option value="<?php echo dol_escape_htmltag($connectorKey); ?>"<?php echo $dchCatalogConnector === $connectorKey ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($connectorDefinition['label']); ?></option><?php } ?></select></label>
+  </form>
+  <?php
+  $dchRefreshConnector = $dchCatalogConnector !== '' ? $dchCatalogConnector : $dchSelectedConnector;
+  $dchRefreshActions = array('woocommerce' => 'refresh_woo_catalog', 'amazon' => 'refresh_amazon_catalog', 'sumup' => 'refresh_sumup_catalog');
+  if (isset($dchRefreshActions[$dchRefreshConnector])) { ?>
+  <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?catalog_connector=<?php echo dol_escape_htmltag($dchRefreshConnector); ?>" style="margin:0;">
+    <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="<?php echo dol_escape_htmltag($dchRefreshActions[$dchRefreshConnector]); ?>">
+    <button class="button" type="submit">Refresh <?php echo dol_escape_htmltag($dchConnectorDefinitions[$dchRefreshConnector]['label']); ?> catalogue</button>
+  </form><?php } ?>
+</div>
+<p class="opacitymedium">Choose <strong>single or bundle recipe</strong>, then select every Dolibarr stock component, its source warehouse, and how many pieces one sold channel item consumes. The same Dolibarr product may use a different warehouse in WooCommerce, Amazon, and SumUp recipes. Leaving a component warehouse blank uses that connector's fallback warehouse.</p>
+<div style="overflow-x:auto;max-height:760px;overflow-y:auto;border:1px solid #ddd;">
+<table class="liste centpercent" style="min-width:1180px;">
+<tr class="liste_titre"><th>Channel product</th><th>Stock behavior</th><th>Dolibarr components per one sold item</th><th></th></tr>
+<?php if (empty($dchCatalog)) { ?>
+<tr><td colspan="4" class="opacitymedium">No channel products discovered yet. Run the database check, refresh WooCommerce products, or sync Amazon/SumUp once.</td></tr>
+<?php } else { foreach ($dchCatalog as $catalogRow) {
+    $componentByIndex = array_values($catalogRow['components']);
+    $recipeFormId = 'dchRecipe' . (int) $catalogRow['id'];
+?>
+<tr class="oddeven">
+  <td style="vertical-align:top;min-width:220px;">
+    <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" id="<?php echo $recipeFormId; ?>"><input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="save_stock_recipe"><input type="hidden" name="catalog_id" value="<?php echo (int) $catalogRow['id']; ?>"></form>
+    <strong><?php echo dol_escape_htmltag(ucfirst($catalogRow['connector'])); ?></strong><br><?php echo dol_escape_htmltag($catalogRow['label']); ?><br><span class="opacitymedium"><?php echo dol_escape_htmltag($catalogRow['sku'] !== '' ? 'SKU ' . $catalogRow['sku'] : 'ID ' . $catalogRow['external_product_id'] . ($catalogRow['external_variant_id'] !== '' ? ' / ' . $catalogRow['external_variant_id'] : '')); ?></span></td>
+  <td style="vertical-align:top;min-width:185px;">
+      <select class="flat" name="stock_mode" form="<?php echo $recipeFormId; ?>" style="width:100%;">
+        <option value="unmapped"<?php echo $catalogRow['stock_mode'] === 'unmapped' ? ' selected' : ''; ?>>Not mapped yet</option>
+        <option value="recipe"<?php echo $catalogRow['stock_mode'] === 'recipe' ? ' selected' : ''; ?>>Single / bundle recipe</option>
+        <option value="ignore"<?php echo $catalogRow['stock_mode'] === 'ignore' ? ' selected' : ''; ?>>Do not change stock</option>
+      </select>
+      <label style="display:block;margin-top:8px;"><input type="checkbox" name="is_bundle" value="1" form="<?php echo $recipeFormId; ?>"<?php echo !empty($catalogRow['is_bundle']) ? ' checked' : ''; ?>> This channel product is a bundle / multipack</label>
+      <div class="opacitymedium" style="margin-top:6px;"><?php echo !empty($catalogRow['is_bundle']) ? 'Bundle: ' . count($componentByIndex) . ' component type(s)' : (count($componentByIndex) === 1 ? 'Single product mapping' : 'No components saved'); ?></div>
+  </td>
+  <td style="vertical-align:top;min-width:500px;">
+      <div id="components-<?php echo $recipeFormId; ?>">
+      <?php $visibleComponents = max(4, count($componentByIndex) + 1); for ($componentIndex = 0; $componentIndex < $visibleComponents; $componentIndex++) {
+          $savedComponent = $componentByIndex[$componentIndex] ?? array('product_id' => '', 'warehouse_id' => '', 'quantity' => '');
+      ?>
+      <div class="dch-component-row" style="display:grid;grid-template-columns:minmax(260px,1fr) minmax(220px,0.8fr) 90px;gap:8px;margin-bottom:5px;">
+        <?php echo dch_product_select('component_product[]', $savedComponent['product_id'], $dchProducts, $recipeFormId); ?>
+        <?php echo dch_warehouse_select('component_warehouse[]', $savedComponent['warehouse_id'], $dchWarehouses, $recipeFormId); ?>
+        <input class="flat" type="number" min="0" step="0.0001" name="component_quantity[]" form="<?php echo $recipeFormId; ?>" value="<?php echo dol_escape_htmltag($savedComponent['quantity']); ?>" placeholder="Qty">
+      </div>
+      <?php } ?>
+      </div><button class="button" type="button" onclick="dchAddRecipeComponent('<?php echo $recipeFormId; ?>')">+ Add component</button>
+  </td>
+  <td style="vertical-align:top;"><button class="button button-save" type="submit" form="<?php echo $recipeFormId; ?>">Save recipe</button></td>
+</tr>
+<?php }} ?>
+</table>
+</div>
+<script>
+function dchAddRecipeComponent(formId) {
+  var container = document.getElementById('components-' + formId);
+  if (!container) return;
+  var rows = container.querySelectorAll('.dch-component-row');
+  if (!rows.length) return;
+  var row = rows[rows.length - 1].cloneNode(true);
+  var select = row.querySelector('select');
+  var selects = row.querySelectorAll('select');
+  var quantity = row.querySelector('input');
+  for (var i = 0; i < selects.length; i++) selects[i].value = '';
+  if (quantity) quantity.value = '';
+  container.appendChild(row);
+}
+</script>
+<?php
+$dchMovements = $sync->inventory()->getStockMovementLog(100);
+?>
+<details style="margin:10px 0 20px;"><summary style="cursor:pointer;font-weight:bold;">Recent channel stock deductions (<?php echo count($dchMovements); ?>)</summary>
+<div style="overflow-x:auto;max-height:420px;overflow-y:auto;margin-top:8px;"><table class="liste centpercent">
+<tr class="liste_titre"><th>Date</th><th>Channel</th><th>Order</th><th>Dolibarr product</th><th>Source warehouse</th><th>Destination</th><th>Native movement</th><th class="right">Deducted</th><th>Status</th><th>Error</th></tr>
+<?php if (empty($dchMovements)) { ?><tr><td colspan="10" class="opacitymedium">No stock deductions recorded yet.</td></tr><?php } else { foreach ($dchMovements as $movementRow) { ?>
+<tr class="oddeven"><td><?php echo dol_escape_htmltag((string) $movementRow->date_order); ?></td><td><?php echo dol_escape_htmltag(ucfirst((string) $movementRow->connector)); ?></td><td><?php echo dol_escape_htmltag((string) ($movementRow->external_order_number ?: $movementRow->external_order_id)); ?></td><td><?php echo dol_escape_htmltag(trim((string) $movementRow->ref . ' - ' . (string) $movementRow->product_label)); ?></td><td><?php echo dol_escape_htmltag((string) $movementRow->warehouse_ref); ?></td><td><?php echo dol_escape_htmltag((string) $movementRow->destination); ?></td><td><?php echo !empty($movementRow->fk_stock_movement) ? '#' . (int) $movementRow->fk_stock_movement : ''; ?></td><td class="right">-<?php echo price((float) $movementRow->quantity); ?></td><td><?php echo dol_escape_htmltag((string) $movementRow->status); ?></td><td><?php echo dol_escape_htmltag((string) $movementRow->error_message); ?></td></tr>
+<?php }} ?>
+</table></div></details>
+<?php if ($dchSelectedConnector === 'woocommerce') { ?>
     <!-- Invoice data cache (debug / development) -->
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">Invoice data cache &amp; JSON viewer (debugging / development)</td></tr>
@@ -529,6 +804,7 @@ Also stores the full WooCommerce JSON for use with the viewer below. Use a limit
     </div>
   </div>
 </div>
+<?php } ?>
 
 <script>
 var _wbsSetupAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
@@ -617,15 +893,15 @@ var _wbsLogAllRows = [];
 function wbsSetupOpenLogModal(){
   _wbsLogAllRows=[];
   document.getElementById("wbsLogSearch").value="";
-  document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="9" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr>';
+  document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="12" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr>';
   document.getElementById("wbsLogCount").textContent="";
   document.getElementById("wbsLogModal").style.display="flex";
   var fd=new FormData();fd.append("token",_wbsSetupToken);fd.append("action","setup_log_list");
   fetch(_wbsSetupAjaxUrl,{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){
-    if(!d.ok){document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="9">Error: '+d.error+'</td></tr>';return;}
+    if(!d.ok){document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="12">Error: '+wbsEsc(d.error)+'</td></tr>';return;}
     _wbsLogAllRows=d.rows||[];
     wbsSetupFilterLog();
-  }).catch(function(e){document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="9">Request failed: '+e+'</td></tr>';});
+  }).catch(function(e){document.getElementById("wbsLogBody").innerHTML='<tr><td colspan="12">Request failed: '+wbsEsc(e)+'</td></tr>';});
 }
 function wbsSetupFilterLog(){
   var q=(document.getElementById("wbsLogSearch").value||"").toLowerCase().trim();
@@ -633,7 +909,7 @@ function wbsSetupFilterLog(){
     var wooR=parseFloat(r.woo_payout||0);
     var n=parseFloat(r.net||0)||(parseFloat(r.gross||0)-parseFloat(r.fee||0));
     var label=r.status==='synced'?(wooR>0?(Math.abs(n-wooR)<0.005?'matched':'unmatched'):'calculated'):r.status;
-    return (r.number+r.invoice+r.payment+r.status+label+r.message).toLowerCase().indexOf(q)>=0;
+    return (r.connector+r.number+r.invoice+r.payment+r.fee_source+r.status+label+r.message).toLowerCase().indexOf(q)>=0;
   }):_wbsLogAllRows;
   document.getElementById("wbsLogCount").textContent=rows.length+" of "+_wbsLogAllRows.length+" rows";
   var html="";
@@ -666,18 +942,20 @@ function wbsSetupFilterLog(){
     var msg=r.message||'';
     html+='<tr class="'+cls+'">';
     html+='<td style="white-space:nowrap;">'+r.date.substring(0,16)+'</td>';
+    html+='<td>'+r.connector+'</td>';
     html+='<td>#'+r.number+'</td>';
     html+='<td>'+r.invoice+'</td>';
     html+='<td>'+r.payment+'</td>';
     html+='<td style="text-align:right;">'+parseFloat(r.gross||0).toFixed(2)+'</td>';
     html+='<td style="text-align:right;">'+parseFloat(r.fee||0).toFixed(2)+'</td>';
+    html+='<td>'+wbsEsc(r.fee_source||'')+'</td>';
     html+='<td style="text-align:right;font-weight:bold;"'+netTip+'>'+net.toFixed(2)+' '+r.currency+'</td>';
     html+='<td>'+statusBadge+'</td>';
     html+='<td>'+pdf+'</td>';
     html+='<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c05000;" title="'+msg.replace(/"/g,'&quot;')+'">'+msg+'</td>';
     html+='</tr>';
   });
-  if(!rows.length)html='<tr><td colspan="10" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
+  if(!rows.length)html='<tr><td colspan="12" style="text-align:center;padding:20px;color:#888;">No rows match.</td></tr>';
   document.getElementById("wbsLogBody").innerHTML=html;
 }
 </script>
@@ -687,6 +965,7 @@ function wbsSetupFilterLog(){
 $diagData = $sync->getJsonConst('WBS_META_DIAG_JSON', array());
 $diagJson = !empty($diagData) ? json_encode($diagData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
 ?>
+<?php if ($dchSelectedConnector === 'woocommerce') { ?>
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td>Diagnostics</td></tr>
 <tr><td>
@@ -745,7 +1024,8 @@ document.getElementById("wbsDiagModal").style.display="flex";
 }
 
 ?>
-<?php if (!empty($detectedIntegrations)): ?>
+<?php } ?>
+<?php if ($dchSelectedConnector === 'woocommerce' && !empty($detectedIntegrations)): ?>
 <br>
 <div id="wbsIntegrationPanel">
   <div class="liste_titre" style="display:flex;gap:4px;padding:8px 12px;">
@@ -781,8 +1061,8 @@ wbsShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
             ⚠️ Desync: delete synced bank entries, PDFs and reset log
         </button>
         <br><span class="opacitymedium">
-            Deletes bank lines stored in the WooBankSync log, downloaded PDF files, and clears the sync log.
-            Does not touch WooCommerce orders or manually-created Dolibarr entries.
+            Deletes bank lines stored in the Dolli Commerce Hub log, downloaded WooCommerce PDF files, and clears the financial sync log.
+            It does not touch channel orders, manually-created Dolibarr entries, or stock movements.
         </span>
     </td></tr>
 </table>
@@ -797,12 +1077,12 @@ wbsShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
         <div id="wbsDesyncConfirmStep" style="padding:18px 20px;">
             <p style="margin:0 0 12px;">This will permanently delete:</p>
             <ul style="margin:0 0 16px;padding-left:20px;line-height:1.8;">
-                <li>All Dolibarr bank lines created by WooBankSync</li>
+                <li>All Dolibarr bank lines created by Dolli Commerce Hub</li>
                 <li>All invoice PDF files downloaded to Dolibarr ECM</li>
-                <li>All WooBankSync sync log entries</li>
-                <li>All WooBankSync order cache entries</li>
+                <li>All Dolli Commerce Hub financial sync log entries</li>
+                <li>All WooCommerce order cache entries</li>
             </ul>
-            <p style="margin:0 0 16px;color:#555;">WooCommerce orders and manually-created Dolibarr entries are <strong>not</strong> affected.</p>
+            <p style="margin:0 0 16px;color:#555;">Channel orders, stock movements, bundle recipes, and manually-created Dolibarr entries are <strong>not</strong> affected.</p>
             <p style="margin:0 0 16px;font-weight:bold;color:#b00020;">This action cannot be undone.</p>
             <div style="display:flex;gap:10px;">
                 <button id="wbsDesyncConfirmBtn" class="button button-delete"
