@@ -2,12 +2,13 @@
 
 require_once __DIR__ . '/woocommerceclient.class.php';
 
-class WooBankSync
+class DolliCommerceHub
 {
     private $db;
     private $conf;
     private $langs;
     private $integrationManager = null;
+    private $inventoryManager = null;
     public $errors = array();
     public $pdfLog = array();
     public $lastSabInvoiceNumber = '';
@@ -31,6 +32,15 @@ class WooBankSync
     private function integrations()
     {
         return $this->integrationManager()->getDetected();
+    }
+
+    public function inventory()
+    {
+        if ($this->inventoryManager === null) {
+            require_once __DIR__ . '/dchinventory.class.php';
+            $this->inventoryManager = new DchInventoryManager($this->db, $this->conf);
+        }
+        return $this->inventoryManager;
     }
 
     public function client()
@@ -73,7 +83,21 @@ class WooBankSync
     {
         $page = max(1, (int) $page);
         $batchSize = max(1, min(100, (int) $batchSize));
-        $stats = array('imported' => 0, 'skipped' => 0, 'errors' => 0, 'messages' => array(), 'items' => array(), 'has_more' => false);
+        $stats = array(
+            'imported' => 0,
+            'skipped' => 0,
+            'errors' => 0,
+            'messages' => array(),
+            'items' => array(),
+            'has_more' => false,
+            'total_orders' => 0,
+            'total_pages' => 0,
+        );
+        if (!$this->inventory()->connectorEnabled('woocommerce')) {
+            $stats['errors'] = 1;
+            $stats['messages'][] = 'WooCommerce connector is disabled in setup.';
+            return $stats;
+        }
         $client = $this->client();
         $statuses = $this->csvToArray($this->getConst('WBS_ORDER_STATUSES', 'processing,completed'));
         $orders = $client->getOrders($statuses, $this->getConst('WBS_SYNC_FROM_DATE'), $page, $batchSize);
@@ -82,6 +106,8 @@ class WooBankSync
             $stats['messages'][] = $client->error ?: 'WooCommerce request failed while fetching orders.';
             return $stats;
         }
+        $stats['total_orders'] = (int) $client->lastTotalItems;
+        $stats['total_pages'] = (int) $client->lastTotalPages;
 
         foreach ($orders as $order) {
             $result = $this->syncOneOrder($order);
@@ -99,8 +125,154 @@ class WooBankSync
         return $stats;
     }
 
-    public function syncOneOrder($order)
+    public function syncConnectorBatch($connector, $cursor = '', $batchSize = 50)
     {
+        $connector = strtolower(trim((string) $connector));
+        if ($connector === 'woocommerce') {
+            $page = max(1, (int) $cursor);
+            $stats = $this->syncBatch($page, $batchSize);
+            $stats['next_cursor'] = !empty($stats['has_more']) ? (string) ($page + 1) : '';
+            return $stats;
+        }
+
+        $stats = array(
+            'imported' => 0, 'skipped' => 0, 'errors' => 0,
+            'messages' => array(), 'items' => array(),
+            'has_more' => false, 'next_cursor' => '', 'total_orders' => 0, 'total_pages' => 0,
+        );
+        if (!in_array($connector, array('amazon', 'sumup'), true)) {
+            $stats['errors'] = 1;
+            $stats['messages'][] = 'Unknown sales connector.';
+            return $stats;
+        }
+        if (!$this->inventory()->connectorEnabled($connector)) {
+            $stats['errors'] = 1;
+            $stats['messages'][] = ucfirst($connector) . ' connector is disabled in setup.';
+            return $stats;
+        }
+
+        $batchSize = max(1, min(100, (int) $batchSize));
+        if ($connector === 'amazon') {
+            require_once __DIR__ . '/dchamazonclient.class.php';
+            $client = new DchAmazonClient(
+                $this->getConst('DCH_AMAZON_LWA_CLIENT_ID'),
+                $this->getConst('DCH_AMAZON_LWA_CLIENT_SECRET'),
+                $this->getConst('DCH_AMAZON_REFRESH_TOKEN'),
+                $this->getConst('DCH_AMAZON_SELLER_ID'),
+                $this->getConst('DCH_AMAZON_MARKETPLACE_IDS'),
+                $this->getConst('DCH_AMAZON_REGION', 'eu')
+            );
+            $response = $client->getOrders($this->getConst('DCH_AMAZON_SYNC_FROM_DATE'), (string) $cursor, $batchSize);
+            if ($response === false) {
+                $stats['errors'] = 1;
+                $stats['messages'][] = $client->error ?: 'Amazon request failed.';
+                return $stats;
+            }
+            $orders = $response['orders'];
+            if ((int) $this->getConst('DCH_AMAZON_FINANCE_ENABLED', '1') === 1) {
+                foreach ($orders as $orderIndex => $amazonOrder) {
+                    $financials = $client->getOrderFinancials((string) ($amazonOrder['id'] ?? ''));
+                    if ($financials === false) {
+                        $orders[$orderIndex]['_dch_finance_available'] = false;
+                        $orders[$orderIndex]['_dch_finance_error'] = $client->error;
+                    } elseif (!empty($financials['available'])) {
+                        $orders[$orderIndex]['fee'] = (float) $financials['fee'];
+                        $orders[$orderIndex]['payout'] = (float) $financials['payout'];
+                        $orders[$orderIndex]['_dch_fee_source'] = 'Amazon Finances API';
+                        $orders[$orderIndex]['_dch_finance_available'] = true;
+                        if (!empty($financials['currency'])) $orders[$orderIndex]['currency'] = (string) $financials['currency'];
+                    } else {
+                        $orders[$orderIndex]['_dch_finance_available'] = false;
+                    }
+                }
+            }
+            $stats['next_cursor'] = (string) $response['next_token'];
+            $stats['has_more'] = $stats['next_cursor'] !== '';
+        } else {
+            require_once __DIR__ . '/dchsumupclient.class.php';
+            $client = new DchSumUpClient($this->getConst('DCH_SUMUP_ACCESS_TOKEN'), $this->getConst('DCH_SUMUP_MERCHANT_CODE'));
+            $response = $client->getTransactions($this->getConst('DCH_SUMUP_SYNC_FROM_DATE'), (string) $cursor, $batchSize);
+            if ($response === false) {
+                $stats['errors'] = 1;
+                $stats['messages'][] = $client->error ?: 'SumUp request failed.';
+                return $stats;
+            }
+            $orders = $response['orders'];
+            $stats['next_cursor'] = !empty($response['has_more']) ? (string) $response['next_cursor'] : '';
+            $stats['has_more'] = !empty($response['has_more']);
+        }
+
+        foreach ($orders as $order) {
+            $result = $this->syncOneOrder($order, $connector);
+            $status = isset($stats[$result['status']]) ? $result['status'] : 'errors';
+            $stats[$status]++;
+            if (!empty($result['message'])) $stats['messages'][] = $result['message'];
+            $stats['items'][] = array(
+                'id' => (string) ($order['id'] ?? ''),
+                'number' => (string) ($order['number'] ?? ($order['id'] ?? '')),
+                'status' => $status,
+                'message' => (string) ($result['message'] ?? ''),
+            );
+        }
+        $this->setConst('DCH_' . strtoupper($connector) . '_LAST_SYNC', dol_now(), 'chaine');
+        return $stats;
+    }
+
+    public function refreshAmazonCatalog($maxPages = 500)
+    {
+        list($schemaOk, $schemaMessage) = $this->inventory()->ensureSchema();
+        if (!$schemaOk) return array(false, $schemaMessage);
+        require_once __DIR__ . '/dchamazonclient.class.php';
+        $client = new DchAmazonClient(
+            $this->getConst('DCH_AMAZON_LWA_CLIENT_ID'),
+            $this->getConst('DCH_AMAZON_LWA_CLIENT_SECRET'),
+            $this->getConst('DCH_AMAZON_REFRESH_TOKEN'),
+            $this->getConst('DCH_AMAZON_SELLER_ID'),
+            $this->getConst('DCH_AMAZON_MARKETPLACE_IDS'),
+            $this->getConst('DCH_AMAZON_REGION', 'eu')
+        );
+        $token = '';
+        $count = 0;
+        for ($page = 0; $page < max(1, (int) $maxPages); $page++) {
+            $response = $client->getListings($token, 20);
+            if ($response === false) return array(false, $client->error);
+            foreach ($response['products'] as $product) {
+                $this->inventory()->upsertCatalogProduct('amazon', $product['product_id'], '', $product['sku'], $product['name']);
+                $count++;
+            }
+            $token = (string) $response['next_token'];
+            if ($token === '') break;
+        }
+        return array(true, 'Amazon catalogue refreshed: ' . $count . ' listings.');
+    }
+
+    public function refreshSumUpCatalog($maxPages = 500)
+    {
+        list($schemaOk, $schemaMessage) = $this->inventory()->ensureSchema();
+        if (!$schemaOk) return array(false, $schemaMessage);
+        require_once __DIR__ . '/dchsumupclient.class.php';
+        $client = new DchSumUpClient($this->getConst('DCH_SUMUP_ACCESS_TOKEN'), $this->getConst('DCH_SUMUP_MERCHANT_CODE'));
+        $cursor = '';
+        $count = 0;
+        for ($page = 0; $page < max(1, (int) $maxPages); $page++) {
+            $response = $client->getTransactions($this->getConst('DCH_SUMUP_SYNC_FROM_DATE'), $cursor, 100);
+            if ($response === false) return array(false, $client->error);
+            foreach ($response['orders'] as $order) {
+                $this->inventory()->learnOrderProducts('sumup', $order);
+                $count += count((array) ($order['line_items'] ?? array()));
+            }
+            $cursor = (string) $response['next_cursor'];
+            if (empty($response['has_more']) || $cursor === '') break;
+        }
+        return array(true, 'SumUp catalogue refreshed from ' . $count . ' transaction product lines.');
+    }
+
+    public function syncOneOrder($order, $connector = 'woocommerce')
+    {
+        $connector = strtolower(trim((string) $connector));
+        if (!in_array($connector, array('woocommerce', 'amazon', 'sumup'), true)) $connector = 'woocommerce';
+        $channelLabel = $connector === 'woocommerce' ? 'WooCommerce' : ($connector === 'sumup' ? 'SumUp' : 'Amazon');
+        $order['_dch_connector'] = $connector;
         $orderId = (string) ($order['id'] ?? '');
         $orderNumber = isset($order['number']) ? (string) $order['number'] : $orderId;
         $paymentMethod = isset($order['payment_method']) ? trim((string) $order['payment_method']) : '';
@@ -110,21 +282,37 @@ class WooBankSync
         $dateOrder = $this->wooDateToSql($order['date_paid'] ?? ($order['date_created'] ?? null));
         $invoiceNumber = '';
         $pdfUrl = '';
-        foreach ($this->integrations() as $integration) {
-            if ($invoiceNumber === '') $invoiceNumber = $integration->extractInvoiceNumber($order);
-            if ($pdfUrl === '') $pdfUrl = $integration->extractPdfUrl($order);
+        if ($connector === 'woocommerce') {
+            foreach ($this->integrations() as $integration) {
+                if ($invoiceNumber === '') $invoiceNumber = $integration->extractInvoiceNumber($order);
+                if ($pdfUrl === '') $pdfUrl = $integration->extractPdfUrl($order);
+            }
         }
         $orderStatus = isset($order['status']) ? (string) $order['status'] : '';
+        if ($connector === 'sumup' && $this->isSumUpPosOwnedTransaction($order)) {
+            $salesRecorded = $this->inventory()->recordOrderSales('sumup', $order, 'dolibarr_pos');
+            if ($this->isOrderSynced($orderId, 'sumup')) {
+                return array('status' => 'skipped', 'message' => 'Skipped SumUp transaction #' . $orderNumber . ': already recorded; POS duplicate protection remains active.');
+            }
+            $msg = 'Skipped SumUp transaction #' . $orderNumber . ': the configured Dolibarr POS integration owns this sale, so no duplicate bank or stock movement was created.' . ($salesRecorded ? '' : ' The sales analytics ledger could not be updated.');
+            $status = $salesRecorded ? 'skipped' : 'error';
+            $posFee = $this->normalizeAmount($order['fee'] ?? 0);
+            $this->insertLog($order, 0, $gross, $posFee, 0, 0, $status, $msg, $dateOrder, '', max(0.0, $gross - $posFee));
+            return array('status' => $salesRecorded ? 'skipped' : 'errors', 'message' => $msg);
+        }
+        $stockResult = $this->inventory()->processOrder($connector, $order);
+        $stockMessage = $this->formatStockResult($stockResult);
 
-        if ($this->isOrderSynced($orderId)) {
-            return array('status' => 'skipped', 'message' => 'Skipped Woo order #' . $orderNumber . ': already synced.');
+        if ($this->isOrderSynced($orderId, $connector)) {
+            if ($connector !== 'woocommerce' && !empty($order['_dch_fee_source'])) $this->updateSyncedConnectorFinancials($order, $connector);
+            return array('status' => 'skipped', 'message' => 'Skipped ' . $channelLabel . ' order #' . $orderNumber . ': already synced.' . $stockMessage);
         }
 
         // Zero-total WooCommerce orders do not create real money movements.
         // This includes free/replacement/manual/fully-discounted orders and some refund/cancel edge cases.
         // Keep a log entry for traceability, but do not create a Dolibarr bank entry and do not count as an error.
         if ($gross <= 0) {
-            $msg = 'Skipped Woo order #' . $orderNumber . ': zero order total' . ($orderStatus !== '' ? ' (status=' . $orderStatus . ')' : '') . ', no bank entry created.';
+            $msg = 'Skipped ' . $channelLabel . ' order #' . $orderNumber . ': zero order total' . ($orderStatus !== '' ? ' (status=' . $orderStatus . ')' : '') . ', no bank entry created.' . $stockMessage;
             $this->insertLog($order, 0, $gross, 0, 0, 0, 'skipped', $msg, $dateOrder, $invoiceNumber, 0);
             return array('status' => 'skipped', 'message' => $msg);
         }
@@ -133,28 +321,51 @@ class WooBankSync
         // (manual admin orders, legacy/imported orders, cancelled/refunded transitions, or unpaid/manual cases).
         // Those orders must not create bank movements and should not count as sync errors.
         if ($paymentMethod === '') {
-            $msg = 'Skipped Woo order #' . $orderNumber . ': empty payment method' . ($orderStatus !== '' ? ' (status=' . $orderStatus . ')' : '') . ', no bank entry created.';
+            $msg = 'Skipped ' . $channelLabel . ' order #' . $orderNumber . ': empty payment method' . ($orderStatus !== '' ? ' (status=' . $orderStatus . ')' : '') . ', no bank entry created.' . $stockMessage;
             $this->insertLog($order, 0, $gross, 0, 0, 0, 'skipped', $msg, $dateOrder, $invoiceNumber, 0);
             return array('status' => 'skipped', 'message' => $msg);
         }
 
-        $map = $this->gatewayMap();
         $mappedPaymentMethod = $paymentMethod;
-        $gatewayConfig = $this->resolveGatewayConfig($paymentMethod, $map);
+        if ($connector === 'woocommerce') {
+            $map = $this->gatewayMap();
+            $gatewayConfig = $this->resolveGatewayConfig($paymentMethod, $map);
+        } else {
+            $channelMap = $this->channelFinanceMap($connector);
+            $gatewayConfig = !empty($channelMap[$paymentMethod]) ? $channelMap[$paymentMethod] : (!empty($channelMap[$connector]) ? $channelMap[$connector] : array());
+            $gatewayConfig['fee_key'] = '';
+            $gatewayConfig['payout_key'] = '';
+        }
+        $fee = $connector === 'woocommerce'
+            ? $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '')
+            : $this->normalizeAmount($order['fee'] ?? 0);
+        if ($connector === 'woocommerce' && $fee <= 0) $fee = $this->autoDetectFee($order);
+        $calculatedPayout = max(0.0, $gross - $fee);
+        $providerPayout = $connector === 'woocommerce'
+            ? $this->extractPayoutAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '')
+            : $this->normalizeAmount($order['payout'] ?? 0);
+
+        if ($connector === 'amazon' && (int) $this->getConst('DCH_AMAZON_FINANCE_ENABLED', '1') === 1 && empty($order['_dch_finance_available'])) {
+            $detail = !empty($order['_dch_finance_error']) ? ' ' . (string) $order['_dch_finance_error'] : ' Amazon notes that financial events may take up to 48 hours to appear.';
+            $message = 'Amazon order #' . $orderNumber . ': stock and sales were processed, but the exact fee/proceeds are finance pending; no bank entry was created.' . $detail . $stockMessage;
+            $this->insertLog($order, 0, $gross, 0, 0, 0, 'pending_finance', $message, $dateOrder, '', 0);
+            return array('status' => 'skipped', 'message' => $message);
+        }
         if (empty($gatewayConfig) || empty($gatewayConfig['bank_id'])) {
+            if ($connector !== 'woocommerce') {
+                $message = $channelLabel . ' order #' . $orderNumber . ': product/stock data processed; no optional bank account is mapped.' . $stockMessage;
+                $this->insertLog($order, 0, $gross, $fee, 0, 0, 'skipped', $message, $dateOrder, $invoiceNumber, $providerPayout > 0 ? $providerPayout : $calculatedPayout);
+                return array('status' => 'skipped', 'message' => $message);
+            }
             $this->insertLog($order, 0, $gross, 0, 0, 0, 'error', 'No Dolibarr bank account mapping for gateway: ' . $paymentMethod, $dateOrder, $invoiceNumber, 0);
-            return array('status' => 'errors', 'message' => 'Order #' . $orderNumber . ': missing bank mapping for ' . $paymentMethod . '.');
+            return array('status' => 'errors', 'message' => $channelLabel . ' order #' . $orderNumber . ': missing bank mapping.' . $stockMessage);
         }
         if (!empty($gatewayConfig['_mapped_from'])) $mappedPaymentMethod = (string) $gatewayConfig['_mapped_from'];
 
         $bankId = (int) $gatewayConfig['bank_id'];
-        $fee = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '');
-        if ($fee <= 0) $fee = $this->autoDetectFee($order);
-        $calculatedPayout = max(0.0, $gross - $fee);
-
         // Read the raw payout amount the provider stored in WooCommerce meta.
         // Uses extractPayoutFromValue() so serialized PayPal structures (net_amount.value) are handled.
-        $wooPayoutRaw = $this->extractPayoutAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '');
+        $wooPayoutRaw = $providerPayout;
 
         // Sanity-check: reject values that are obviously wrong (equals fee, exceeds gross, negative).
         $wooPayoutSuspicious = $wooPayoutRaw > 0 && (
@@ -181,7 +392,7 @@ class WooBankSync
 
         $dryRun = (int) $this->getConst('WBS_DRY_RUN', '0') === 1;
         $buyerName = $this->extractBuyerName($order);
-        $labelBase = 'WOO - #' . $orderNumber;
+        $labelBase = strtoupper($connector === 'woocommerce' ? 'WOO' : $connector) . ' - #' . $orderNumber;
         if (!empty($buyerName)) $labelBase .= ' ' . $buyerName;
         if ($this->nativeInvoiceReferenceEnabled() && !empty($invoiceNumber)) $labelBase .= ' - ' . $this->formatInvoiceReferenceForLabel($invoiceNumber);
 
@@ -192,18 +403,20 @@ class WooBankSync
             $bankLineId = $this->insertBankLine($bankId, $payout, $labelBase, $dateOrder);
             if ($bankLineId <= 0) {
                 $this->db->rollback();
-                $msg = 'Failed to insert bank line for Woo order #' . $orderNumber . ': ' . $this->db->lasterror();
+                $msg = 'Failed to insert bank line for ' . $channelLabel . ' order #' . $orderNumber . ': ' . $this->db->lasterror();
                 $this->insertLog($order, $bankId, $gross, $fee, 0, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
                 return array('status' => 'errors', 'message' => $msg);
             }
-            $this->writeBankAmountExtraFields($bankLineId, $gross, $fee);
+            if ($connector === 'woocommerce') $this->writeBankAmountExtraFields($bankLineId, $gross, $fee);
         }
 
         $pdfEcmFilepath = '';
         if (!$dryRun) {
-            foreach ($this->integrations() as $integration) {
-                $result = $integration->tryDownloadPdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $this);
-                if ($result['ok']) { $pdfEcmFilepath = $result['filepath']; break; }
+            if ($connector === 'woocommerce') {
+                foreach ($this->integrations() as $integration) {
+                    $result = $integration->tryDownloadPdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $this);
+                    if ($result['ok']) { $pdfEcmFilepath = $result['filepath']; break; }
+                }
             }
         }
 
@@ -211,17 +424,79 @@ class WooBankSync
         if ($dryRun) {
             $message = '[DRY RUN] gross=' . price2num($gross, 'MT') . ' fee=' . price2num($fee, 'MT') . ' net=' . price2num($payout, 'MT');
         } elseif ($payoutMatch === 'mismatch') {
-            $message = 'Payout mismatch: WooCommerce=' . price2num($wooPayoutRaw, 'MT') . ' calculated=' . price2num($calculatedPayout, 'MT') . ' — using WooCommerce value';
+            $message = 'Payout mismatch: ' . $channelLabel . '=' . price2num($wooPayoutRaw, 'MT') . ' calculated=' . price2num($calculatedPayout, 'MT') . ' — using provider value';
         } else {
             $message = '';
         }
         $this->insertLog($order, $bankId, $gross, $fee, $bankLineId, 0, $status, $message, $dateOrder, $invoiceNumber, $payout, $pdfUrl, $pdfEcmFilepath, $wooPayoutRaw);
-        $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $pdfEcmFilepath, $order);
+        if ($connector === 'woocommerce') $this->upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $pdfEcmFilepath, $order);
         $this->db->commit();
 
-        $returnMsg = 'Synced Woo order #' . $orderNumber . ' gross=' . price2num($gross, 'MT') . ' fee=' . price2num($fee, 'MT') . ' net=' . price2num($payout, 'MT');
+        $returnMsg = 'Synced ' . $channelLabel . ' order #' . $orderNumber . ' gross=' . price2num($gross, 'MT') . ' fee=' . price2num($fee, 'MT') . ' net=' . price2num($payout, 'MT');
         if ($payoutMatch === 'mismatch') $returnMsg .= ' [payout mismatch]';
+        $returnMsg .= $stockMessage;
         return array('status' => 'imported', 'message' => $returnMsg);
+    }
+
+    private function formatStockResult(array $result)
+    {
+        $applied = (int) ($result['applied'] ?? 0);
+        $already = (int) ($result['already'] ?? 0);
+        $unmapped = (int) ($result['unmapped'] ?? 0);
+        $errors = (int) ($result['errors'] ?? 0);
+        if ($applied + $already + $unmapped + $errors === 0) return '';
+
+        $parts = array();
+        if ($applied > 0) $parts[] = $applied . ' deducted';
+        if ($already > 0) $parts[] = $already . ' already applied';
+        if ($unmapped > 0) $parts[] = $unmapped . ' unmapped';
+        if ($errors > 0) $parts[] = $errors . ' failed';
+        $message = ' [stock: ' . implode(', ', $parts) . ']';
+        if (!empty($result['messages'])) $message .= ' ' . implode(' | ', array_slice($result['messages'], 0, 3));
+        return $message;
+    }
+
+    private function updateSyncedConnectorFinancials(array $order, $connector)
+    {
+        $orderId = (string) ($order['id'] ?? '');
+        $fee = $this->normalizeAmount($order['fee'] ?? 0);
+        $gross = $this->normalizeAmount($order['total'] ?? 0);
+        $payout = $this->normalizeAmount($order['payout'] ?? 0);
+        if ($payout <= 0) $payout = max(0.0, $gross - $fee);
+        $resql = $this->db->query('SELECT rowid, bank_line_id_gross FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity
+            . " AND connector='" . $this->db->escape($connector) . "' AND woo_order_id='" . $this->db->escape($orderId) . "' LIMIT 1");
+        $row = $resql ? $this->db->fetch_object($resql) : null;
+        if (!$row) return false;
+        if (!empty($row->bank_line_id_gross)) {
+            $this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'bank SET amount=' . price2num($payout, 'MT') . ' WHERE rowid=' . (int) $row->bank_line_id_gross);
+        }
+        $source = (string) ($order['_dch_fee_source'] ?? ucfirst($connector) . ' API');
+        return $this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'woobanksync_log SET fee_amount=' . price2num($fee, 'MT')
+            . ', payout_amount=' . price2num($payout, 'MT')
+            . ", fee_source='" . $this->db->escape($source) . "', sync_message='Financial costs refreshed from " . $this->db->escape($source) . "'"
+            . ' WHERE rowid=' . (int) $row->rowid);
+    }
+
+    private function isSumUpPosOwnedTransaction(array $order)
+    {
+        $mode = strtolower(trim((string) $this->getConst('DCH_SUMUP_POS_DUPLICATE_MODE', 'off')));
+        if ($mode === 'all') return true;
+        if ($mode !== 'reference') return false;
+
+        $prefixes = $this->csvToArray($this->getConst('DCH_SUMUP_POS_REFERENCE_PREFIXES', ''));
+        if (empty($prefixes)) return false;
+        $references = (array) ($order['_dch_source_references'] ?? array());
+        $references[] = (string) ($order['number'] ?? '');
+        $references[] = (string) ($order['transaction_id'] ?? '');
+        foreach ($references as $reference) {
+            $reference = strtolower(trim((string) $reference));
+            if ($reference === '') continue;
+            foreach ($prefixes as $prefix) {
+                $prefix = strtolower(trim((string) $prefix));
+                if ($prefix !== '' && strpos($reference, $prefix) === 0) return true;
+            }
+        }
+        return false;
     }
 
     public function refreshWooDiscovery()
@@ -312,6 +587,58 @@ class WooBankSync
         return array(true, 'Detected ' . count($allGateways) . ' relevant payment methods/gateways (' . count($orders) . ' recent orders scanned). Only active gateways and gateways used in existing orders are listed. Found ' . count($invoiceKeys) . ' possible invoice meta keys.');
     }
 
+    public function refreshWooCatalog($maxPages = 100)
+    {
+        list($schemaOk, $schemaMessage) = $this->inventory()->ensureSchema();
+        if (!$schemaOk) return array(false, $schemaMessage, array());
+
+        $client = $this->client();
+        $stats = array('products' => 0, 'variations' => 0, 'errors' => 0);
+        for ($page = 1; $page <= max(1, (int) $maxPages); $page++) {
+            $products = $client->getProducts($page, 100);
+            if ($products === false) return array(false, $client->error, $stats);
+            $productTotalPages = (int) $client->lastTotalPages;
+            foreach ($products as $product) {
+                $productId = (string) ($product['id'] ?? '');
+                if ($productId === '') continue;
+                $this->inventory()->upsertCatalogProduct(
+                    'woocommerce',
+                    $productId,
+                    '',
+                    (string) ($product['sku'] ?? ''),
+                    (string) ($product['name'] ?? ('Product ' . $productId))
+                );
+                $stats['products']++;
+
+                if (!empty($product['variations']) && is_array($product['variations'])) {
+                    for ($variationPage = 1; $variationPage <= 100; $variationPage++) {
+                        $variations = $client->getProductVariations((int) $productId, $variationPage, 100);
+                        if ($variations === false) {
+                            $stats['errors']++;
+                            break;
+                        }
+                        foreach ($variations as $variation) {
+                            $variationId = (string) ($variation['id'] ?? '');
+                            if ($variationId === '') continue;
+                            $attributes = array();
+                            foreach (($variation['attributes'] ?? array()) as $attribute) {
+                                $option = trim((string) ($attribute['option'] ?? ''));
+                                if ($option !== '') $attributes[] = $option;
+                            }
+                            $label = (string) ($product['name'] ?? ('Product ' . $productId));
+                            if (!empty($attributes)) $label .= ' — ' . implode(' / ', $attributes);
+                            $this->inventory()->upsertCatalogProduct('woocommerce', $productId, $variationId, (string) ($variation['sku'] ?? ''), $label);
+                            $stats['variations']++;
+                        }
+                        if (count($variations) < 100) break;
+                    }
+                }
+            }
+            if (count($products) < 100 || ($productTotalPages > 0 && $page >= $productTotalPages)) break;
+        }
+        return array(true, 'WooCommerce catalogue refreshed: ' . $stats['products'] . ' products and ' . $stats['variations'] . ' variations.', $stats);
+    }
+
     public function autoCreateAndMapAccounts()
     {
         $gateways = $this->getJsonConst('WBS_GATEWAYS_JSON', array());
@@ -349,6 +676,7 @@ class WooBankSync
         $rows = array();
         $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
+            . $this->logConnectorCondition('woocommerce')
             . " AND sync_status='synced' ORDER BY rowid DESC";
         $resql = $this->db->query($sql);
         if ($resql) {
@@ -364,10 +692,11 @@ class WooBankSync
         $stats = array('checked' => 0, 'updated' => 0, 'unchanged' => 0, 'errors' => 0, 'messages' => array(), 'items' => array());
         $table = MAIN_DB_PREFIX . 'woobanksync_log';
 
-        $sql = 'SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity . " AND sync_status='synced' ORDER BY rowid DESC";
+        $sql = 'SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity . $this->logConnectorCondition('woocommerce') . " AND sync_status='synced' ORDER BY rowid DESC";
         if (!empty($orderIds)) {
             $ids = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
             $sql = 'SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity
+                . $this->logConnectorCondition('woocommerce')
                 . " AND sync_status='synced' AND woo_order_id IN (" . implode(',', $ids) . ') ORDER BY rowid DESC';
         }
         $resql = $this->db->query($sql);
@@ -539,7 +868,7 @@ class WooBankSync
                 if (!empty($obj->dolibarr_bank_account_id)) $bankAccountIds[] = (int) $obj->dolibarr_bank_account_id;
             }
         } else {
-            return array(false, 'Could not read WooBankSync log: ' . $this->db->lasterror());
+            return array(false, 'Could not read Dolli Commerce Hub log: ' . $this->db->lasterror());
         }
 
         // 2) Also include mapped virtual bank accounts so older rows whose ids were not logged can be found safely.
@@ -670,7 +999,7 @@ class WooBankSync
         $deletedLogs = $this->countRows($table, 'entity=' . (int) $this->conf->entity);
         if (!$this->db->query('DELETE FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity)) {
             $this->db->rollback();
-            return array(false, 'Could not clear WooBankSync log: ' . $this->db->lasterror());
+            return array(false, 'Could not clear Dolli Commerce Hub log: ' . $this->db->lasterror());
         }
         $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache WHERE entity=' . (int) $this->conf->entity);
         $this->db->commit();
@@ -700,13 +1029,15 @@ class WooBankSync
         $sql = "CREATE TABLE IF NOT EXISTS " . $table . " (" .
             "rowid integer AUTO_INCREMENT PRIMARY KEY," .
             "entity integer NOT NULL DEFAULT 1," .
-            "woo_order_id varchar(64) NOT NULL," .
+            "connector varchar(32) NOT NULL DEFAULT 'woocommerce'," .
+            "woo_order_id varchar(128) NOT NULL," .
             "woo_order_number varchar(128) DEFAULT NULL," .
             "woo_transaction_id varchar(255) DEFAULT NULL," .
             "payment_method varchar(128) DEFAULT NULL," .
             "dolibarr_bank_account_id integer DEFAULT NULL," .
             "gross_amount double(24,8) DEFAULT 0," .
             "fee_amount double(24,8) DEFAULT 0," .
+            "fee_source varchar(128) DEFAULT NULL," .
             "payout_amount double(24,8) DEFAULT 0," .
             "currency varchar(8) DEFAULT NULL," .
             "bank_line_id_gross integer DEFAULT NULL," .
@@ -724,6 +1055,8 @@ class WooBankSync
         $messages[] = 'Log table is ready.';
 
         $columns = array(
+            'connector' => "varchar(32) NOT NULL DEFAULT 'woocommerce'",
+            'fee_source' => 'varchar(128) DEFAULT NULL',
             'payout_amount'  => 'double(24,8) DEFAULT 0',
             'woo_payout_raw' => 'double(24,8) DEFAULT NULL',
             'woo_invoice_number' => 'varchar(255) DEFAULT NULL',
@@ -742,12 +1075,18 @@ class WooBankSync
             }
         }
 
-        $resql = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_woobanksync_entity_order'");
+        $legacyIndex = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_woobanksync_entity_order'");
+        if ($legacyIndex && $this->db->num_rows($legacyIndex) > 0) {
+            if (!$this->db->query("ALTER TABLE " . $table . " DROP INDEX uk_woobanksync_entity_order")) {
+                return array(false, 'Database check failed while upgrading the connector-aware order key: ' . $this->db->lasterror());
+            }
+        }
+        $resql = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_dch_entity_connector_order'");
         if ($resql && $this->db->num_rows($resql) == 0) {
-            if (!$this->db->query("ALTER TABLE " . $table . " ADD UNIQUE KEY uk_woobanksync_entity_order (entity, woo_order_id)")) {
-                $messages[] = 'Unique key could not be added, maybe duplicate old rows exist: ' . $this->db->lasterror();
+            if (!$this->db->query("ALTER TABLE " . $table . " ADD UNIQUE KEY uk_dch_entity_connector_order (entity, connector, woo_order_id)")) {
+                $messages[] = 'Connector-aware unique key could not be added, maybe duplicate old rows exist: ' . $this->db->lasterror();
             } else {
-                $messages[] = 'Unique key is ready.';
+                $messages[] = 'Connector-aware unique key is ready.';
             }
         }
 
@@ -769,6 +1108,10 @@ class WooBankSync
         }
         $messages[] = 'Order cache table is ready.';
 
+        list($inventoryOk, $inventoryMessage) = $this->inventory()->ensureSchema();
+        if (!$inventoryOk) return array(false, 'Database check failed while creating commerce inventory tables: ' . $inventoryMessage);
+        $messages[] = $inventoryMessage;
+
         $resql = $this->db->query("SHOW COLUMNS FROM " . $cacheTable . " LIKE 'raw_order_json'");
         if ($resql && $this->db->num_rows($resql) == 0) {
             if (!$this->db->query("ALTER TABLE " . $cacheTable . " ADD COLUMN raw_order_json longtext DEFAULT NULL AFTER pdf_ecm_filepath")) {
@@ -777,7 +1120,33 @@ class WooBankSync
             $messages[] = 'Added full WooCommerce order JSON cache.';
         }
 
+        list($menuOk, $menuMessage) = $this->cleanupLegacyBankMenu();
+        if (!$menuOk) return array(false, $menuMessage);
+        $messages[] = $menuMessage;
+
         return array(true, implode(' ', $messages));
+    }
+
+    /** Remove the pre-2.2 left-menu entry that Dolibarr may retain under Bank/Cash. */
+    public function cleanupLegacyBankMenu()
+    {
+        $table = MAIN_DB_PREFIX . 'menu';
+        $columns = $this->getTableColumns($table);
+        if (empty($columns) || !in_array('url', $columns, true)) {
+            return array(false, 'Could not inspect the Dolibarr menu table while removing the legacy Bank/Cash entry.');
+        }
+
+        $signature = array();
+        if (in_array('mainmenu', $columns, true)) $signature[] = "mainmenu='bank'";
+        if (in_array('leftmenu', $columns, true)) $signature[] = "leftmenu='woobanksync'";
+        if (empty($signature)) return array(false, 'The Dolibarr menu table has no compatible menu signature columns.');
+
+        $where = "url LIKE '%/custom/woobanksync/index.php%' AND (" . implode(' OR ', $signature) . ')';
+        if (in_array('entity', $columns, true)) $where .= ' AND entity IN (0,' . (int) $this->conf->entity . ')';
+        if (!$this->db->query('DELETE FROM ' . $table . ' WHERE ' . $where)) {
+            return array(false, 'Could not remove the legacy Dolli Commerce Hub entry from Bank/Cash: ' . $this->db->lasterror());
+        }
+        return array(true, 'Legacy Bank/Cash menu entry is removed.');
     }
 
     public function createDocumentFolder()
@@ -811,7 +1180,7 @@ class WooBankSync
 
         $toCreate = array(
             'wbs_gross_amount' => array('label' => 'WooCommerce gross amount', 'const' => 'WBS_EXTRAFIELD_GROSS_CODE'),
-            'wbs_fee_amount'   => array('label' => 'WooCommerce fee amount',   'const' => 'WBS_EXTRAFIELD_FEE_CODE'),
+            'wbs_fee_amount'   => array('label' => 'WooCommerce fee amount', 'const' => 'WBS_EXTRAFIELD_FEE_CODE'),
         );
 
         $existingFields = $this->getBankExtraFields();
@@ -832,7 +1201,7 @@ class WooBankSync
                     '24,8',
                     'bank',
                     0, 0, '', '', 1, '', '1',
-                    'Amount field imported from WooCommerce by WooBankSync',
+                    'Amount field imported from a commerce channel by Dolli Commerce Hub',
                     '', (string) $this->conf->entity, '', '1'
                 );
                 if ($result <= 0) {
@@ -850,7 +1219,7 @@ class WooBankSync
         if (!empty($failed)) {
             return array(false, 'Failed to create: ' . implode(', ', $failed) . '. Created: ' . implode(', ', $created) . '. Reused/skipped: ' . implode(', ', $reused) . '.');
         }
-        return array(true, 'Amount custom fields ready. Created: ' . (empty($created) ? 'none' : implode(', ', $created)) . '. Reused/skipped: ' . (empty($reused) ? 'none' : implode(', ', $reused)) . '.');
+        return array(true, 'WooCommerce amount custom fields ready. Created: ' . (empty($created) ? 'none' : implode(', ', $created)) . '. Reused/skipped: ' . (empty($reused) ? 'none' : implode(', ', $reused)) . '.');
     }
 
     public function createAndMapInvoiceBankExtraField()
@@ -908,6 +1277,42 @@ class WooBankSync
             );
         }
         $this->setConst('WBS_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
+    }
+
+    public function channelFinanceMap($connector)
+    {
+        $connector = strtolower(trim((string) $connector));
+        if (!in_array($connector, array('amazon', 'sumup'), true)) return array();
+        $key = 'DCH_' . strtoupper($connector) . '_FINANCE_MAP_JSON';
+        $map = $this->getJsonConst($key, array());
+        if (!empty($map)) return $map;
+        $legacyBankId = (int) $this->getConst('DCH_' . strtoupper($connector) . '_BANK_ID', '0');
+        return array($connector => array('bank_id' => $legacyBankId));
+    }
+
+    public function saveChannelFinanceMapFromPost($connector)
+    {
+        $connector = strtolower(trim((string) $connector));
+        if (!in_array($connector, array('amazon', 'sumup'), true)) return array(false, 'Unknown connector finance mapping.');
+        $bankId = max(0, (int) GETPOST('finance_bank_id', 'int'));
+        $map = array($connector => array('bank_id' => $bankId));
+        $this->setConst('DCH_' . strtoupper($connector) . '_FINANCE_MAP_JSON', json_encode($map), 'chaine');
+        $this->setConst('DCH_' . strtoupper($connector) . '_BANK_ID', (string) $bankId, 'chaine');
+        return array(true, ucfirst($connector) . ' virtual bank mapping saved.');
+    }
+
+    public function autoCreateChannelAccount($connector)
+    {
+        $connector = strtolower(trim((string) $connector));
+        if (!in_array($connector, array('amazon', 'sumup'), true)) return array(false, 'Unknown connector.');
+        $label = ($connector === 'amazon' ? 'Amazon Seller' : 'SumUp') . ' clearing';
+        $wasExisting = false;
+        $accountId = $this->findOrCreateVirtualBankAccount($label, strtoupper(substr($connector, 0, 8)), $wasExisting);
+        if ($accountId <= 0) return array(false, 'Could not create the virtual bank account: ' . $this->db->lasterror());
+        $map = array($connector => array('bank_id' => $accountId));
+        $this->setConst('DCH_' . strtoupper($connector) . '_FINANCE_MAP_JSON', json_encode($map), 'chaine');
+        $this->setConst('DCH_' . strtoupper($connector) . '_BANK_ID', (string) $accountId, 'chaine');
+        return array(true, ($wasExisting ? 'Reused and mapped ' : 'Created and mapped ') . $label . '.');
     }
 
     public function gatewayMap()
@@ -1224,7 +1629,7 @@ class WooBankSync
         $e = (int) $this->conf->entity;
         $oid = $this->db->escape((string) $orderId);
         // Log table first (SELECT * — dynamic columns handled via null coalescing)
-        $r = $this->db->query("SELECT * FROM " . MAIN_DB_PREFIX . "woobanksync_log WHERE entity=$e AND woo_order_id='$oid' AND sync_status='synced' LIMIT 1");
+        $r = $this->db->query("SELECT * FROM " . MAIN_DB_PREFIX . "woobanksync_log WHERE entity=$e" . $this->logConnectorCondition('woocommerce') . " AND woo_order_id='$oid' AND sync_status='synced' LIMIT 1");
         if ($r && ($obj = $this->db->fetch_object($r))) {
             $path = (string) ($obj->pdf_ecm_filepath ?? '');
             if ($path !== '') return $path;
@@ -1244,7 +1649,7 @@ class WooBankSync
         $entity = (int) $this->conf->entity;
         $now = $this->sqlDateNow();
         $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_order_cache SET pdf_ecm_filepath='" . $escaped . "', date_updated=" . $now . " WHERE entity=" . $entity . " AND woo_order_id='" . $oid . "'");
-        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_log SET pdf_ecm_filepath='" . $escaped . "' WHERE entity=" . $entity . " AND woo_order_id='" . $oid . "' AND sync_status='synced'");
+        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_log SET pdf_ecm_filepath='" . $escaped . "' WHERE entity=" . $entity . $this->logConnectorCondition('woocommerce') . " AND woo_order_id='" . $oid . "' AND sync_status='synced'");
     }
 
     public function isInvoicePdfStored($ecmFilepath)
@@ -1311,6 +1716,7 @@ class WooBankSync
         $rows = array();
         $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
+            . $this->logConnectorCondition('woocommerce')
             . " AND sync_status='synced' ORDER BY rowid DESC";
         if ($limit > 0) $sql .= ' LIMIT ' . (int) $limit;
         $resql = $this->db->query($sql);
@@ -1476,7 +1882,7 @@ class WooBankSync
         $data = array();
         $this->addDataIfColumn($data, $fields, 'ref', "'" . $this->db->escape($safeRef) . "'", false);
         $this->addDataIfColumn($data, $fields, 'label', "'" . $this->db->escape($label) . "'", false);
-        $this->addDataIfColumn($data, $fields, 'bank', "'Virtual WooCommerce clearing account'", false);
+        $this->addDataIfColumn($data, $fields, 'bank', "'Virtual commerce clearing account'", false);
         $this->addDataIfColumn($data, $fields, 'number', "'" . $this->db->escape($safeRef) . "'", false);
         $this->addDataIfColumn($data, $fields, 'account_number', "'" . $this->db->escape($safeRef) . "'", false);
         $this->addDataIfColumn($data, $fields, 'courant', 1, true);
@@ -1571,6 +1977,7 @@ class WooBankSync
         $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log');
         $data = array(
             'entity' => (int) $this->conf->entity,
+            'connector' => "'" . $this->db->escape((string) ($order['_dch_connector'] ?? 'woocommerce')) . "'",
             'woo_order_id' => "'" . $this->db->escape((string) ($order['id'] ?? '')) . "'",
             'woo_order_number' => "'" . $this->db->escape((string) ($order['number'] ?? ($order['id'] ?? ''))) . "'",
             'woo_transaction_id' => "'" . $this->db->escape((string) ($order['transaction_id'] ?? '')) . "'",
@@ -1578,6 +1985,7 @@ class WooBankSync
             'dolibarr_bank_account_id' => (int) $bankId,
             'gross_amount' => price2num($gross, 'MT'),
             'fee_amount' => price2num($fee, 'MT'),
+            'fee_source' => "'" . $this->db->escape((string) ($order['_dch_fee_source'] ?? (($order['_dch_connector'] ?? 'woocommerce') === 'woocommerce' ? 'WooCommerce order metadata' : ucfirst((string) ($order['_dch_connector'] ?? '')) . ' API'))) . "'",
             'payout_amount' => price2num($payoutAmount, 'MT'),
             'woo_payout_raw' => $wooPayoutRaw > 0 ? price2num($wooPayoutRaw, 'MT') : 'NULL',
             'currency' => "'" . $this->db->escape((string) ($order['currency'] ?? 'EUR')) . "'",
@@ -1593,14 +2001,29 @@ class WooBankSync
         );
         foreach (array_keys($data) as $key) if (!in_array($key, $fields, true)) unset($data[$key]);
         $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'woobanksync_log (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        $updates = array();
+        foreach (array_keys($data) as $key) {
+            if (in_array($key, array('entity', 'connector', 'woo_order_id'), true)) continue;
+            $updates[] = $key . '=VALUES(' . $key . ')';
+        }
+        if (!empty($updates)) $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(',', $updates);
         return $this->db->query($sql);
     }
 
-    private function isOrderSynced($orderId)
+    private function isOrderSynced($orderId, $connector = 'woocommerce')
     {
-        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity . " AND woo_order_id='" . $this->db->escape((string) $orderId) . "' AND sync_status IN ('synced','dryrun')";
+        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity
+            . (in_array('connector', $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log'), true)
+                ? " AND connector='" . $this->db->escape((string) $connector) . "'" : '')
+            . " AND woo_order_id='" . $this->db->escape((string) $orderId) . "' AND sync_status IN ('synced','dryrun')";
         $res = $this->db->query($sql);
         return ($res && $this->db->num_rows($res) > 0);
+    }
+
+    private function logConnectorCondition($connector)
+    {
+        if (!in_array('connector', $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log'), true)) return '';
+        return " AND connector='" . $this->db->escape((string) $connector) . "'";
     }
 
     private function addDataIfColumn(&$data, $fields, $key, $value, $numeric)
@@ -1662,7 +2085,13 @@ class WooBankSync
         $this->conf->global->$name = $value;
     }
 
-    private function getConst($name, $default = '')
+    /**
+     * Read a module constant.
+     *
+     * Public because integration hooks receive the Dolli Commerce Hub instance and
+     * use it to read shared WooCommerce/PDF configuration.
+     */
+    public function getConst($name, $default = '')
     {
         return isset($this->conf->global->$name) ? $this->conf->global->$name : $default;
     }
@@ -1680,4 +2109,9 @@ class WooBankSync
         $items = array_map('trim', explode(',', (string) $csv));
         return array_values(array_filter($items, static function ($item) { return $item !== ''; }));
     }
+}
+
+/** Backward-compatible technical class name for existing integrations/cron data. */
+class WooBankSync extends DolliCommerceHub
+{
 }
