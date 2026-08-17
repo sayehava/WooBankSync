@@ -1,15 +1,63 @@
-# 🏦 WooBankSync
+# Dolli Commerce Hub
 
-> **Dolibarr v23 module** — syncs WooCommerce payment movements into Dolibarr bank and virtual clearing accounts.
+> **Dolibarr commerce integration module** — synchronizes WooCommerce, Amazon Seller, and SumUp sales, payments, product mappings, bundles, and stock movements.
 
 > [!IMPORTANT]
-> WooCommerce remains the **invoice master**. WooBankSync only creates bank/cashflow entries in Dolibarr — it never creates Dolibarr customer invoices, modifies WooCommerce invoices, or sends customer emails.
+> Each channel remains the source of its orders. Dolli Commerce Hub creates Dolibarr bank and stock movements; it does not create customer invoices, change remote orders, or send customer emails.
+
+## Channel modules
+
+WooCommerce, Amazon Seller, and SumUp are independent submodules. The compact connector manager shows one row per channel and opens only the selected connector's settings, so adding more channels does not create an ever-growing wall of settings cards. Each channel can be enabled or disabled independently.
+
+Dolli Commerce Hub has its own top-level Dolibarr menu with separate **Dashboard**, **Sales analytics**, and **Configuration** pages. The database check removes the obsolete pre-2.2 entry from Bank/Cash. WooCommerce-only tools—including Germanized, amount custom fields, invoice cache, order-meta diagnostics, and gateway discovery—appear only while configuring WooCommerce.
+
+- WooCommerce uses the WooCommerce REST API and keeps the existing gateway, Germanized invoice, PDF, and difference-check workflows.
+- Amazon uses Login with Amazon plus SP-API Orders `2026-01-01`, Listings Items `2021-08-01`, and Finances `2024-06-19`. Buyer/recipient PII is not requested. Finalized finance transactions supply Amazon expenses and net proceeds; finance-pending orders wait rather than creating an estimated bank entry.
+- SumUp uses transaction history and full transaction details so product quantities and exact `fee_amount` costs can be read when SumUp recorded product lines. If a separate Dolibarr POS/SumUp integration already owns those sales, duplicate protection can skip all SumUp writes or only transactions with configured POS reference prefixes while still counting their product lines and fees in analytics.
+
+Amazon and SumUp each have their own optional Dolibarr virtual/clearing bank mapping. The setup page can create or reuse these accounts automatically. As with WooCommerce gateways, the account receives the net payout while gross sales, provider fees, net payout, and the fee source remain visible in the sync log and analytics.
+
+## Product mapping and bundles
+
+Recommended first-time/upgrade sequence:
+
+1. Open module setup and run the database check once.
+2. Save credentials and activate only the required channel modules.
+3. Refresh each active product catalogue.
+4. Map normal products and bundle components, then choose the source warehouse for every recipe component. The connector warehouse is only a fallback.
+5. Enable stock deduction and run sync again. Previously synced orders are safe to revisit because stock events are idempotent.
+
+The setup page contains a shared channel catalogue. Every external product or variation has one of three stock modes:
+
+| Mode | Effect |
+|---|---|
+| Not mapped | Sync continues, but the order reports that stock is waiting for a recipe |
+| Single / bundle recipe | Deducts one or more Dolibarr products using the configured quantities |
+| Ignore | The channel item intentionally does not affect stock |
+
+A normal item is a recipe with one Dolibarr component at quantity `1`. A double pack uses quantity `2`, a 4-pack uses `4`, and a mixed bundle may contain any number of different components. Warehouse routing belongs to each external product recipe, so the same Dolibarr product can be deducted from the online-shop warehouse for WooCommerce, the Amazon warehouse for Amazon, and the retail warehouse for SumUp.
+
+Stock deductions are idempotent per channel, order, order line, and Dolibarr component. Re-running a sync can apply a recipe that was mapped later, but it does not deduct an already-applied sale twice. Each successful deduction is a native Dolibarr stock movement and also appears in the module audit with channel, order, source warehouse, destination and native movement ID.
+
+Before enabling stock deductions, select a warehouse for each recipe component (or set a connector fallback) and map every sellable channel item. If a SumUp transaction contains no product lines, the financial movement can still sync, but the UI reports that stock could not be assigned.
+
+This release records sale deductions only. A later refund, cancellation, return, or recipe/warehouse change does not automatically reverse a stock movement that was already applied; those adjustments remain explicit Dolibarr stock operations.
+
+## Sales analytics and Excel export
+
+The **Sales analytics** section reports orders and product quantities by WooCommerce, Amazon and SumUp. It separates single items from bundles/multipacks, shows total sold channel items, expands recipes into underlying inventory pieces, and reports gross sales, provider costs, and net payouts by currency. Reports can be filtered by sales channel, source warehouse, channel + warehouse together, month, year, custom date range, or all dates and exported as a UTF-8, Excel-compatible CSV.
+
+The **Warehouse × sales channel** table uses the warehouse stored on the applied stock movement, not the product's current recipe. This preserves historical routing when mappings later change and distinguishes WooCommerce from SumUp even when both use the same warehouse.
+
+Sales lines are stored independently from bank and stock writes. This means ignored/unmapped items and SumUp transactions owned by a separate Dolibarr POS integration still appear in sales counts without causing duplicate entries. After installing this upgrade, re-run each connector sync for the historical period you want to report; idempotency prevents repeat stock movements and the resync backfills the new analytics ledger.
+
+Amazon-generated invoices and SumUp receipts remain on their respective platforms. The connector does not attempt PDF download when the API role or endpoint does not provide those documents.
 
 ---
 
 ## ⚙️ How it works
 
-For each eligible WooCommerce order, WooBankSync creates a **single bank entry** in Dolibarr:
+For each eligible WooCommerce order, Dolli Commerce Hub creates a **single bank entry** in Dolibarr:
 
 ```
 💰 Bank entry amount  =  net payout  (gross order total  −  payment processor fee)
@@ -117,7 +165,7 @@ Gateway **aliases** are supported — old PayPal orders stored as `paypal` are m
 
 ## 📋 Sync log viewer
 
-The sync log is available in the module setup page. Each row shows date, order number, invoice number, payment method, gross, fee, net payout, a colour-coded status badge, a PDF indicator, and any error or mismatch message.
+The sync log is available on the dashboard and in the module setup page. Each row shows channel, date, order number, invoice number, payment method, gross, fee, fee source, net payout, status, PDF indicator, and any error or mismatch message.
 
 ### 🎨 Status badges
 
@@ -135,11 +183,11 @@ The sync log is available in the module setup page. Each row shows date, order n
 
 ---
 
-## 📊 Amount custom fields
+## 📊 WooCommerce amount custom fields
 
-WooBankSync can write the **gross amount** and **fee** into Dolibarr bank extra fields so they appear in account exports and reports alongside the net bank entry.
+Dolli Commerce Hub can write the WooCommerce **gross amount** and **fee** into Dolibarr bank extra fields so they appear in account exports and reports alongside the net bank entry. Amazon and SumUp costs remain in their connector-neutral sync log and sales analytics instead of using these WooCommerce fields.
 
-Configure the field codes in the setup page under **Amount custom fields**. The **Create and map missing fields** button creates any missing extra fields and maps them automatically without overwriting manually configured mappings.
+Configure the field codes inside **WooCommerce configuration → WooCommerce amount custom fields**. The **Create and map missing fields** button creates any missing extra fields and maps them automatically without overwriting manually configured mappings.
 
 ---
 
@@ -148,7 +196,7 @@ Configure the field codes in the setup page under **Amount custom fields**. The 
 > [!WARNING]
 > The Desync action is **destructive** and is protected by a confirmation prompt.
 
-Desync removes all bank entries and log rows created by WooBankSync. It uses stored bank line IDs first and falls back to label patterns (`WOO - #...`) for older log entries.
+Desync removes all bank entries and log rows created by Dolli Commerce Hub. It uses stored bank line IDs first and falls back to label patterns (`WOO - #...`) for older log entries.
 
 Manually created Dolibarr entries and unrelated bank records are **never touched**.
 
@@ -157,13 +205,14 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 ## 🔄 Update process
 
 > [!NOTE]
-> No module disable/enable is needed for normal updates.
+> No module disable/enable is needed for normal code or database updates. Version 2.2 introduces a new top-level menu, so an existing installation may need one deactivate/reactivate cycle after uploading 2.2 to create the new menu. Version 2.2.1 also removes the obsolete Bank/Cash entry automatically when database checks run. The module's data tables are not removed by its `remove()` method, but make a normal database backup before any module upgrade.
 
 1. 📁 Replace files in `htdocs/custom/woobanksync`
 2. 🌐 Open the module setup page
 3. ▶️ Click **Run/update database checks**
-4. ✅ Verify settings are preserved
-5. 🚀 Test with **Sync now**
+4. 🔁 If the new top-level menu is not visible yet, deactivate and reactivate Dolli Commerce Hub once
+5. ✅ Verify connector credentials, mappings, and the new top-level menu
+6. 🚀 Test with **Sync now**
 
 ---
 
@@ -171,10 +220,13 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 
 | File | Purpose |
 |---|---|
-| `core/modules/modWooBankSync.class.php` | Module descriptor |
+| `core/modules/modWooBankSync.class.php` | Backward-compatible technical module descriptor |
 | `admin/setup.php` | ⚙️ Settings and log viewer UI |
 | `index.php` | 🚀 Manual sync UI |
 | `class/woobanksync.class.php` | 🧠 All business logic |
+| `class/dchinventory.class.php` | Product recipes, warehouse routing and stock movements |
+| `class/dchsalesreport.class.php` | Cross-platform sales analytics queries |
+| `reports.php` | Filterable sales report and Excel-compatible export |
 | `class/woocommerceclient.class.php` | 🔌 WooCommerce REST API client |
 | `scripts/sync.php` | 🖥️ CLI/cron entry point |
 | `sql/llx_woobanksync_log.sql` | 🗄️ Sync log table schema |
