@@ -297,7 +297,7 @@ class WbsGermanizedClient
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Dolibarr WooBankSync/1.1');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Dolli-Commerce-Hub/2.0');
         $body = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
