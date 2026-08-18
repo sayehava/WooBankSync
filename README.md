@@ -1,15 +1,15 @@
-# Commerce Automation Hub
+# Finance Automation Hub
 
-> **Dolibarr commerce and payment automation bridge** — synchronizes sales, money movements, provider fees, documents, product mappings, bundles, and stock across WooCommerce, Amazon Seller, Stripe, PayPal, SumUp, and future connectors.
+> **Dolibarr finance and commerce automation bridge** — synchronizes sales, expenses, money movements, provider fees, documents, product mappings, bundles, and stock across WooCommerce, Amazon Seller, Stripe, PayPal, SumUp, and future connectors.
 
 > [!IMPORTANT]
-> Each channel remains the source of its orders. Commerce Automation Hub creates Dolibarr bank and stock movements; it does not create customer invoices, change remote orders, or send customer emails.
+> Each channel remains the source of its orders. Finance Automation Hub creates Dolibarr bank and stock movements; it does not create customer invoices, change remote orders, or send customer emails.
 
 ## Channel modules
 
 WooCommerce, Amazon Seller, and SumUp are independent submodules. The compact connector manager shows one row per channel and opens only the selected connector's settings, so adding more channels does not create an ever-growing wall of settings cards. Each channel can be enabled or disabled independently.
 
-Commerce Automation Hub has its own top-level Dolibarr menu with separate **Dashboard**, **Sales analytics**, and **Configuration** pages. The database check removes the obsolete pre-2.2 entry from Bank/Cash. WooCommerce-only tools—including Germanized, amount custom fields, invoice cache, order-meta diagnostics, and gateway discovery—appear only while configuring WooCommerce.
+Finance Automation Hub has its own top-level Dolibarr menu with separate **Dashboard**, **Sales analytics**, and **Configuration** pages. WooCommerce-only tools—including Germanized, amount custom fields, invoice cache, order-meta diagnostics, and gateway discovery—appear only while configuring WooCommerce.
 
 - WooCommerce uses the WooCommerce REST API and keeps the existing gateway, Germanized invoice, PDF, and difference-check workflows.
 - Amazon uses Login with Amazon plus SP-API Orders `2026-01-01`, Listings Items `2021-08-01`, and Finances `2024-06-19`. Buyer/recipient PII is not requested. Finalized finance transactions supply Amazon expenses and net proceeds; finance-pending orders wait rather than creating an estimated bank entry.
@@ -57,7 +57,7 @@ Amazon-generated invoices and SumUp receipts remain on their respective platform
 
 ## ⚙️ How it works
 
-For each eligible WooCommerce order, Commerce Automation Hub creates a **single bank entry** in Dolibarr:
+For each eligible WooCommerce order, Finance Automation Hub creates a **single bank entry** in Dolibarr:
 
 ```
 💰 Bank entry amount  =  net payout  (gross order total  −  payment processor fee)
@@ -187,7 +187,7 @@ The sync log is available on the dashboard and in the module setup page. Each ro
 
 ## 📊 WooCommerce amount custom fields
 
-Commerce Automation Hub can write the WooCommerce **gross amount** and **fee** into Dolibarr bank extra fields so they appear in account exports and reports alongside the net bank entry. Amazon and SumUp costs remain in their connector-neutral sync log and sales analytics instead of using these WooCommerce fields.
+Finance Automation Hub can write the WooCommerce **gross amount** and **fee** into Dolibarr bank extra fields so they appear in account exports and reports alongside the net bank entry. Amazon and SumUp costs remain in their connector-neutral sync log and sales analytics instead of using these WooCommerce fields.
 
 Configure the fields inside **WooCommerce configuration → WooCommerce amount custom fields**. Gross and fee accept only numeric bank-entry custom fields, must use different fields, and cannot use the invoice-number field. You can create fields manually in Dolibarr and map them, or use the explicit **Create and map missing amount fields automatically** button.
 
@@ -200,22 +200,21 @@ The mapped gross, fee, and invoice display labels can be renamed from the setup 
 > [!WARNING]
 > The Desync action is **destructive** and is protected by a confirmation prompt.
 
-Desync removes all bank entries and log rows created by Commerce Automation Hub. It uses stored bank line IDs first and falls back to label patterns (`WOO - #...`) for older log entries.
+Desync removes all bank entries and log rows created by Finance Automation Hub. It uses stored bank line IDs first and falls back to label patterns (`WOO - #...`) for older log entries.
 
 Manually created Dolibarr entries and unrelated bank records are **never touched**.
 
 ---
 
-## 🔄 Update process
+## 🔄 Installation
 
 > [!NOTE]
-> Version 3.0 changes the technical module identity from WooBankSync to Commerce Automation Hub. Install it in the new folder and reactivate it once. Existing legacy configuration keys and data tables are intentionally retained, so the rename does not discard synchronization history or mappings. Make a normal database backup before any module upgrade.
+> This is a clean pre-production module identity. Install it as a new module; no compatibility layer or data migration from an earlier identity is included.
 
-1. ⏹️ Deactivate the former WooBankSync module without deleting its data
-2. 📁 Replace/rename its folder as `htdocs/custom/commerceautomationhub`; do not keep both module folders active
-3. ▶️ Activate Commerce Automation Hub 3.0 and run **Run/update database checks**
-4. ✅ Verify connector credentials, mappings, and the new top-level menu
-5. 🚀 Test with **Sync now**
+1. 📁 Install the module in `htdocs/custom/financeautomationhub`
+2. ▶️ Activate Finance Automation Hub and run **Run/update database checks**
+3. ⚙️ Configure connector credentials, payment mappings, product recipes, and warehouses
+4. 🚀 Test with **Sync now**
 
 ---
 
@@ -223,17 +222,17 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 
 | File | Purpose |
 |---|---|
-| `core/modules/modCommerceAutomationHub.class.php` | Dolibarr module descriptor |
+| `core/modules/modFinanceAutomationHub.class.php` | Dolibarr module descriptor |
 | `admin/setup.php` | ⚙️ Settings and log viewer UI |
 | `index.php` | 🚀 Manual sync UI |
-| `class/commerceautomationhub.class.php` | 🧠 All business logic |
-| `class/dchinventory.class.php` | Product recipes, warehouse routing and stock movements |
-| `class/dchsalesreport.class.php` | Cross-platform sales analytics queries |
+| `class/financeautomationhub.class.php` | 🧠 All business logic |
+| `class/fahinventory.class.php` | Product recipes, warehouse routing and stock movements |
+| `class/fahsalesreport.class.php` | Cross-platform sales analytics queries |
 | `reports.php` | Filterable sales report and Excel-compatible export |
-| `class/woocommerceclient.class.php` | 🔌 WooCommerce REST API client |
+| `class/fahwoocommerceclient.class.php` | 🔌 WooCommerce REST API client |
 | `scripts/sync.php` | 🖥️ CLI/cron entry point |
-| `sql/llx_woobanksync_log.sql` | 🗄️ Sync log table schema |
-| `lang/en_US/commerceautomationhub.lang` | 🌍 Language strings |
+| `sql/llx_fah_sync_log.sql` | 🗄️ Sync log table schema |
+| `lang/en_US/financeautomationhub.lang` | 🌍 Language strings |
 
 ---
 

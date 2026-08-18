@@ -2,16 +2,16 @@
 
 if (!defined('MAIN_DB_PREFIX')) die('Access denied');
 
-require_once __DIR__ . '/WbsIntegrationInterface.php';
+require_once __DIR__ . '/FahIntegrationInterface.php';
 
 /**
  * Scans the helpers/ directory for integration files and manages their lifecycle.
  *
- * Naming convention: helpers/FooBarIntegration.php → class WbsFooBarIntegration
- * Each file must define exactly one class that implements WbsIntegrationInterface.
+ * Naming convention: helpers/FooBarIntegration.php → class FahFooBarIntegration
+ * Each file must define exactly one class that implements FahIntegrationInterface.
  * The class is instantiated with ($db, $conf) and registered automatically.
  */
-class WbsIntegrationManager
+class FahIntegrationManager
 {
     private $db;
     private $conf;
@@ -30,7 +30,7 @@ class WbsIntegrationManager
         $this->loaded = true;
         foreach (glob(__DIR__ . '/*Integration.php') as $file) {
             require_once $file;
-            $class = 'Wbs' . basename($file, '.php');
+            $class = 'Fah' . basename($file, '.php');
             if (class_exists($class)) {
                 $instance = new $class($this->db, $this->conf);
                 $this->integrations[$instance->getId()] = $instance;

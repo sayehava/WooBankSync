@@ -1,6 +1,6 @@
 <?php
 
-class DchStripeClient
+class FahStripeClient
 {
     private $secretKey;
     private $accountId;
@@ -58,7 +58,7 @@ class DchStripeClient
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($ch, CURLOPT_TIMEOUT, 45);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Commerce-Automation-Hub/3.0');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Finance-Automation-Hub/3.0');
         $body = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);

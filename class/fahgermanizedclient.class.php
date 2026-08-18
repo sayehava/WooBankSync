@@ -1,7 +1,7 @@
 <?php
 
 /**
- * WbsGermanizedClient
+ * FahGermanizedClient
  *
  * Retrieves invoice number and PDF download URL from WooCommerce Germanized Pro
  * via the WooCommerce REST API and Germanized-specific document endpoints.
@@ -17,7 +17,7 @@
  * Document object shape:
  *   id, type ("invoice"), number, formatted_number, date, download_url, file_url
  */
-class WbsGermanizedClient
+class FahGermanizedClient
 {
     private $baseUrl;
     private $consumerKey;
@@ -297,7 +297,7 @@ class WbsGermanizedClient
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Commerce-Automation-Hub/3.0');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Finance-Automation-Hub/3.0');
         $body = curl_exec($ch);
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);

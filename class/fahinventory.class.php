@@ -2,9 +2,9 @@
 
 /**
  * Shared catalogue, bundle-recipe and stock-movement service for
- * Commerce Automation Hub sales-channel connectors.
+ * Finance Automation Hub sales-channel connectors.
  */
-class DchInventoryManager
+class FahInventoryManager
 {
     private $db;
     private $conf;
@@ -19,7 +19,7 @@ class DchInventoryManager
     {
         $prefix = MAIN_DB_PREFIX;
         $queries = array(
-            "CREATE TABLE IF NOT EXISTS {$prefix}dch_catalog_product (" .
+            "CREATE TABLE IF NOT EXISTS {$prefix}fah_catalog_product (" .
                 "rowid integer AUTO_INCREMENT PRIMARY KEY," .
                 "entity integer NOT NULL DEFAULT 1," .
                 "connector varchar(32) NOT NULL," .
@@ -32,10 +32,10 @@ class DchInventoryManager
                 "active integer NOT NULL DEFAULT 1," .
                 "date_seen datetime DEFAULT NULL," .
                 "tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," .
-                "UNIQUE KEY uk_dch_catalog_external (entity, connector, external_product_id, external_variant_id)," .
-                "KEY idx_dch_catalog_sku (entity, connector, external_sku)" .
+                "UNIQUE KEY uk_fah_catalog_external (entity, connector, external_product_id, external_variant_id)," .
+                "KEY idx_fah_catalog_sku (entity, connector, external_sku)" .
             ") ENGINE=innodb",
-            "CREATE TABLE IF NOT EXISTS {$prefix}dch_bundle_component (" .
+            "CREATE TABLE IF NOT EXISTS {$prefix}fah_bundle_component (" .
                 "rowid integer AUTO_INCREMENT PRIMARY KEY," .
                 "entity integer NOT NULL DEFAULT 1," .
                 "fk_catalog_product integer NOT NULL," .
@@ -43,10 +43,10 @@ class DchInventoryManager
                 "fk_warehouse integer NOT NULL DEFAULT 0," .
                 "quantity double(24,8) NOT NULL DEFAULT 1," .
                 "tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," .
-                "UNIQUE KEY uk_dch_component_product (entity, fk_catalog_product, fk_product)," .
-                "KEY idx_dch_component_catalog (fk_catalog_product)" .
+                "UNIQUE KEY uk_fah_component_product (entity, fk_catalog_product, fk_product)," .
+                "KEY idx_fah_component_catalog (fk_catalog_product)" .
             ") ENGINE=innodb",
-            "CREATE TABLE IF NOT EXISTS {$prefix}dch_stock_movement (" .
+            "CREATE TABLE IF NOT EXISTS {$prefix}fah_stock_movement (" .
                 "rowid integer AUTO_INCREMENT PRIMARY KEY," .
                 "entity integer NOT NULL DEFAULT 1," .
                 "connector varchar(32) NOT NULL," .
@@ -65,10 +65,10 @@ class DchInventoryManager
                 "date_order datetime DEFAULT NULL," .
                 "date_created datetime DEFAULT NULL," .
                 "tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," .
-                "UNIQUE KEY uk_dch_stock_event (entity, connector, external_order_id, external_line_id, event_key, fk_product)," .
-                "KEY idx_dch_stock_status (entity, connector, status)" .
+                "UNIQUE KEY uk_fah_stock_event (entity, connector, external_order_id, external_line_id, event_key, fk_product)," .
+                "KEY idx_fah_stock_status (entity, connector, status)" .
             ") ENGINE=innodb",
-            "CREATE TABLE IF NOT EXISTS {$prefix}dch_sales_line (" .
+            "CREATE TABLE IF NOT EXISTS {$prefix}fah_sales_line (" .
                 "rowid integer AUTO_INCREMENT PRIMARY KEY," .
                 "entity integer NOT NULL DEFAULT 1," .
                 "connector varchar(32) NOT NULL," .
@@ -87,25 +87,25 @@ class DchInventoryManager
                 "date_order datetime DEFAULT NULL," .
                 "date_recorded datetime DEFAULT NULL," .
                 "tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP," .
-                "UNIQUE KEY uk_dch_sales_line (entity, connector, external_order_id, external_line_id)," .
-                "KEY idx_dch_sales_date (entity, date_order)," .
-                "KEY idx_dch_sales_connector_date (entity, connector, date_order)" .
+                "UNIQUE KEY uk_fah_sales_line (entity, connector, external_order_id, external_line_id)," .
+                "KEY idx_fah_sales_date (entity, date_order)," .
+                "KEY idx_fah_sales_connector_date (entity, connector, date_order)" .
             ") ENGINE=innodb"
         );
 
         foreach ($queries as $sql) {
             if (!$this->db->query($sql)) return array(false, $this->db->lasterror());
         }
-        $columnCheck = $this->db->query("SHOW COLUMNS FROM {$prefix}dch_catalog_product LIKE 'is_bundle'");
+        $columnCheck = $this->db->query("SHOW COLUMNS FROM {$prefix}fah_catalog_product LIKE 'is_bundle'");
         if ($columnCheck && $this->db->num_rows($columnCheck) == 0) {
-            if (!$this->db->query("ALTER TABLE {$prefix}dch_catalog_product ADD COLUMN is_bundle integer NOT NULL DEFAULT 0 AFTER stock_mode")) {
+            if (!$this->db->query("ALTER TABLE {$prefix}fah_catalog_product ADD COLUMN is_bundle integer NOT NULL DEFAULT 0 AFTER stock_mode")) {
                 return array(false, $this->db->lasterror());
             }
         }
         $upgrades = array(
-            array("{$prefix}dch_bundle_component", 'fk_warehouse', 'integer NOT NULL DEFAULT 0 AFTER fk_product'),
-            array("{$prefix}dch_stock_movement", 'external_order_number', 'varchar(128) DEFAULT NULL AFTER external_order_id'),
-            array("{$prefix}dch_stock_movement", 'destination', 'varchar(255) DEFAULT NULL AFTER fk_warehouse'),
+            array("{$prefix}fah_bundle_component", 'fk_warehouse', 'integer NOT NULL DEFAULT 0 AFTER fk_product'),
+            array("{$prefix}fah_stock_movement", 'external_order_number', 'varchar(128) DEFAULT NULL AFTER external_order_id'),
+            array("{$prefix}fah_stock_movement", 'destination', 'varchar(255) DEFAULT NULL AFTER fk_warehouse'),
         );
         foreach ($upgrades as $upgrade) {
             $check = $this->db->query("SHOW COLUMNS FROM " . $upgrade[0] . " LIKE '" . $this->db->escape($upgrade[1]) . "'");
@@ -118,20 +118,20 @@ class DchInventoryManager
 
     public function connectorEnabled($connector)
     {
-        $key = 'DCH_' . strtoupper($connector) . '_ENABLED';
+        $key = 'FAH_' . strtoupper($connector) . '_ENABLED';
         if ($connector === 'woocommerce' && !isset($this->conf->global->$key)) return true;
         return !empty($this->conf->global->$key);
     }
 
     public function stockEnabled($connector)
     {
-        $key = 'DCH_' . strtoupper($connector) . '_STOCK_ENABLED';
+        $key = 'FAH_' . strtoupper($connector) . '_STOCK_ENABLED';
         return $this->connectorEnabled($connector) && !empty($this->conf->global->$key);
     }
 
     public function warehouseId($connector)
     {
-        $key = 'DCH_' . strtoupper($connector) . '_WAREHOUSE_ID';
+        $key = 'FAH_' . strtoupper($connector) . '_WAREHOUSE_ID';
         return isset($this->conf->global->$key) ? (int) $this->conf->global->$key : 0;
     }
 
@@ -177,7 +177,7 @@ class DchInventoryManager
         if ($externalProductId === '' && $sku === '') return 0;
         if ($externalProductId === '') $externalProductId = 'sku:' . $sku;
 
-        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'dch_catalog_product'
+        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'fah_catalog_product'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND connector='" . $this->db->escape($connector) . "'"
             . " AND external_product_id='" . $this->db->escape($externalProductId) . "'"
@@ -185,25 +185,25 @@ class DchInventoryManager
         $resql = $this->db->query($sql);
         $obj = $resql ? $this->db->fetch_object($resql) : null;
         if ($obj) {
-            $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'dch_catalog_product SET'
+            $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'fah_catalog_product SET'
                 . " external_sku='" . $this->db->escape($sku) . "',"
                 . " label='" . $this->db->escape($label) . "', active=1, date_seen=" . $this->sqlDateNow()
                 . ' WHERE rowid=' . (int) $obj->rowid;
             return $this->db->query($sql) ? (int) $obj->rowid : 0;
         }
 
-        $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'dch_catalog_product'
+        $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'fah_catalog_product'
             . ' (entity, connector, external_product_id, external_variant_id, external_sku, label, stock_mode, active, date_seen) VALUES ('
             . (int) $this->conf->entity . ", '" . $this->db->escape($connector) . "', '"
             . $this->db->escape($externalProductId) . "', '" . $this->db->escape($externalVariantId) . "', '"
             . $this->db->escape($sku) . "', '" . $this->db->escape($label) . "', 'unmapped', 1, " . $this->sqlDateNow() . ')';
-        return $this->db->query($sql) ? (int) $this->db->last_insert_id(MAIN_DB_PREFIX . 'dch_catalog_product') : 0;
+        return $this->db->query($sql) ? (int) $this->db->last_insert_id(MAIN_DB_PREFIX . 'fah_catalog_product') : 0;
     }
 
     public function getCatalog($connector = '')
     {
         $rows = array();
-        $sql = 'SELECT c.* FROM ' . MAIN_DB_PREFIX . 'dch_catalog_product c WHERE c.entity=' . (int) $this->conf->entity;
+        $sql = 'SELECT c.* FROM ' . MAIN_DB_PREFIX . 'fah_catalog_product c WHERE c.entity=' . (int) $this->conf->entity;
         if ($connector !== '') $sql .= " AND c.connector='" . $this->db->escape($this->normalizeConnector($connector)) . "'";
         $sql .= ' ORDER BY c.connector, c.label, c.external_sku';
         $resql = $this->db->query($sql);
@@ -220,7 +220,7 @@ class DchInventoryManager
                 'is_bundle' => !empty($obj->is_bundle) ? 1 : 0,
                 'components' => array(),
             );
-            $componentSql = 'SELECT bc.fk_product, bc.fk_warehouse, bc.quantity, p.ref, p.label, e.ref AS warehouse_ref FROM ' . MAIN_DB_PREFIX . 'dch_bundle_component bc'
+            $componentSql = 'SELECT bc.fk_product, bc.fk_warehouse, bc.quantity, p.ref, p.label, e.ref AS warehouse_ref FROM ' . MAIN_DB_PREFIX . 'fah_bundle_component bc'
                 . ' LEFT JOIN ' . MAIN_DB_PREFIX . 'product p ON p.rowid=bc.fk_product'
                 . ' LEFT JOIN ' . MAIN_DB_PREFIX . 'entrepot e ON e.rowid=bc.fk_warehouse'
                 . ' WHERE bc.entity=' . (int) $this->conf->entity . ' AND bc.fk_catalog_product=' . (int) $obj->rowid
@@ -266,25 +266,25 @@ class DchInventoryManager
         }
 
         $this->db->begin();
-        if (!$this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'dch_bundle_component WHERE entity=' . (int) $this->conf->entity . ' AND fk_catalog_product=' . $catalogId)) {
+        if (!$this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'fah_bundle_component WHERE entity=' . (int) $this->conf->entity . ' AND fk_catalog_product=' . $catalogId)) {
             $this->db->rollback();
             return array(false, $this->db->lasterror());
         }
         foreach ($clean as $productId => $component) {
-            $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'dch_bundle_component (entity, fk_catalog_product, fk_product, fk_warehouse, quantity) VALUES ('
+            $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'fah_bundle_component (entity, fk_catalog_product, fk_product, fk_warehouse, quantity) VALUES ('
                 . (int) $this->conf->entity . ', ' . $catalogId . ', ' . (int) $productId . ', ' . (int) $component['warehouse_id'] . ', ' . price2num($component['quantity'], 'MU') . ')';
             if (!$this->db->query($sql)) {
                 $this->db->rollback();
                 return array(false, $this->db->lasterror());
             }
         }
-        if (!$this->db->query('UPDATE ' . MAIN_DB_PREFIX . "dch_catalog_product SET stock_mode='" . $this->db->escape($mode) . "', is_bundle=" . ($isBundle ? '1' : '0') . ' WHERE rowid=' . $catalogId . ' AND entity=' . (int) $this->conf->entity)) {
+        if (!$this->db->query('UPDATE ' . MAIN_DB_PREFIX . "fah_catalog_product SET stock_mode='" . $this->db->escape($mode) . "', is_bundle=" . ($isBundle ? '1' : '0') . ' WHERE rowid=' . $catalogId . ' AND entity=' . (int) $this->conf->entity)) {
             $this->db->rollback();
             return array(false, $this->db->lasterror());
         }
         $componentFactor = 0.0;
         foreach ($clean as $component) $componentFactor += (float) $component['quantity'];
-        if (!$this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'dch_sales_line SET is_bundle=' . ($isBundle ? '1' : '0')
+        if (!$this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'fah_sales_line SET is_bundle=' . ($isBundle ? '1' : '0')
             . ', component_units=quantity*' . price2num($componentFactor, 'MU')
             . ' WHERE entity=' . (int) $this->conf->entity . ' AND fk_catalog_product=' . $catalogId)) {
             $this->db->rollback();
@@ -458,7 +458,7 @@ class DchInventoryManager
             if ($catalog && $catalog->stock_mode === 'recipe') {
                 foreach ($this->getRecipeComponents($catalogId) as $component) $componentFactor += (float) $component['quantity'];
             }
-            $table = MAIN_DB_PREFIX . 'dch_sales_line';
+            $table = MAIN_DB_PREFIX . 'fah_sales_line';
             $values = array(
                 'external_order_number' => $orderNumber,
                 'fk_catalog_product' => $catalogId,
@@ -491,7 +491,7 @@ class DchInventoryManager
     public function getStockMovementLog($limit = 500)
     {
         $rows = array();
-        $sql = 'SELECT sm.*, p.ref, p.label AS product_label, e.ref AS warehouse_ref FROM ' . MAIN_DB_PREFIX . 'dch_stock_movement sm'
+        $sql = 'SELECT sm.*, p.ref, p.label AS product_label, e.ref AS warehouse_ref FROM ' . MAIN_DB_PREFIX . 'fah_stock_movement sm'
             . ' LEFT JOIN ' . MAIN_DB_PREFIX . 'product p ON p.rowid=sm.fk_product'
             . ' LEFT JOIN ' . MAIN_DB_PREFIX . 'entrepot e ON e.rowid=sm.fk_warehouse'
             . ' WHERE sm.entity=' . (int) $this->conf->entity . ' ORDER BY sm.rowid DESC LIMIT ' . max(1, min(5000, (int) $limit));
@@ -504,8 +504,8 @@ class DchInventoryManager
 
     private function applySaleMovement($connector, $orderId, $orderNumber, $lineId, $catalogId, $productId, $warehouseId, $quantity, $dateOrder, $user)
     {
-        $table = MAIN_DB_PREFIX . 'dch_stock_movement';
-        $inventoryCode = substr('DCH-' . strtoupper($connector) . '-' . $orderId . '-' . $lineId, 0, 128);
+        $table = MAIN_DB_PREFIX . 'fah_stock_movement';
+        $inventoryCode = substr('FAH-' . strtoupper($connector) . '-' . $orderId . '-' . $lineId, 0, 128);
         $where = 'entity=' . (int) $this->conf->entity
             . " AND connector='" . $this->db->escape($connector) . "'"
             . " AND external_order_id='" . $this->db->escape($orderId) . "'"
@@ -550,7 +550,7 @@ class DchInventoryManager
         require_once DOL_DOCUMENT_ROOT . '/product/stock/class/mouvementstock.class.php';
         $movement = new MouvementStock($this->db);
         $destination = 'Sold via ' . ($connector === 'woocommerce' ? 'WooCommerce' : ucfirst($connector));
-        $label = 'Commerce Automation Hub | Sale stock correction | ' . $destination . ' | order #' . $orderNumber;
+        $label = 'Finance Automation Hub | Sale stock correction | ' . $destination . ' | order #' . $orderNumber;
         $stockBefore = $this->warehouseStock($productId, $warehouseId);
         $movementId = $movement->livraison($user, $productId, $warehouseId, $quantity, 0, substr($label, 0, 255), $dateOrder ?: '', '', '', '', 0, $inventoryCode);
         if ($movementId > 0) {
@@ -579,7 +579,7 @@ class DchInventoryManager
 
     private function fetchCatalogById($catalogId)
     {
-        $resql = $this->db->query('SELECT * FROM ' . MAIN_DB_PREFIX . 'dch_catalog_product WHERE rowid=' . (int) $catalogId . ' AND entity=' . (int) $this->conf->entity . ' LIMIT 1');
+        $resql = $this->db->query('SELECT * FROM ' . MAIN_DB_PREFIX . 'fah_catalog_product WHERE rowid=' . (int) $catalogId . ' AND entity=' . (int) $this->conf->entity . ' LIMIT 1');
         return $resql ? $this->db->fetch_object($resql) : null;
     }
 
@@ -601,7 +601,7 @@ class DchInventoryManager
     private function getRecipeComponents($catalogId)
     {
         $rows = array();
-        $resql = $this->db->query('SELECT fk_product, fk_warehouse, quantity FROM ' . MAIN_DB_PREFIX . 'dch_bundle_component WHERE entity=' . (int) $this->conf->entity . ' AND fk_catalog_product=' . (int) $catalogId);
+        $resql = $this->db->query('SELECT fk_product, fk_warehouse, quantity FROM ' . MAIN_DB_PREFIX . 'fah_bundle_component WHERE entity=' . (int) $this->conf->entity . ' AND fk_catalog_product=' . (int) $catalogId);
         if ($resql) {
             while ($obj = $this->db->fetch_object($resql)) $rows[] = array('product_id' => (int) $obj->fk_product, 'warehouse_id' => (int) $obj->fk_warehouse, 'quantity' => (float) $obj->quantity);
         }
@@ -611,7 +611,7 @@ class DchInventoryManager
     private function getLineMovementEvents($connector, $orderId, $lineId)
     {
         $rows = array();
-        $sql = 'SELECT fk_product, fk_warehouse, quantity, status FROM ' . MAIN_DB_PREFIX . 'dch_stock_movement'
+        $sql = 'SELECT fk_product, fk_warehouse, quantity, status FROM ' . MAIN_DB_PREFIX . 'fah_stock_movement'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND connector='" . $this->db->escape($connector) . "'"
             . " AND external_order_id='" . $this->db->escape($orderId) . "'"
@@ -633,7 +633,7 @@ class DchInventoryManager
 
     private function resolveStockUser()
     {
-        $userId = !empty($this->conf->global->DCH_STOCK_USER_ID) ? (int) $this->conf->global->DCH_STOCK_USER_ID : 0;
+        $userId = !empty($this->conf->global->FAH_STOCK_USER_ID) ? (int) $this->conf->global->FAH_STOCK_USER_ID : 0;
         if ($userId <= 0) {
             $resql = $this->db->query('SELECT rowid FROM ' . MAIN_DB_PREFIX . 'user'
                 . ' WHERE statut=1 AND admin=1 AND entity IN (0,' . (int) $this->conf->entity . ') ORDER BY rowid LIMIT 1');

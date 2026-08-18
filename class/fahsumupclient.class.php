@@ -1,7 +1,7 @@
 <?php
 
 /** SumUp transaction-history client used for sales and product discovery. */
-class DchSumUpClient
+class FahSumUpClient
 {
     private $accessToken;
     private $merchantCode;
@@ -94,13 +94,13 @@ class DchSumUpClient
             'payment_method_title' => 'SumUp',
             'total' => $transaction['amount'] ?? 0,
             'fee' => $transaction['fee_amount'] ?? 0,
-            '_dch_fee_source' => 'SumUp transaction details API',
+            '_fah_fee_source' => 'SumUp transaction details API',
             'currency' => (string) ($transaction['currency'] ?? 'EUR'),
             'status' => (string) ($transaction['status'] ?? ''),
             'date_created' => (string) ($transaction['timestamp'] ?? $transaction['date'] ?? ''),
             'date_paid' => (string) ($transaction['timestamp'] ?? $transaction['date'] ?? ''),
             'line_items' => $lines,
-            '_dch_source_references' => array_values(array_filter(array_unique(array_map('strval', array(
+            '_fah_source_references' => array_values(array_filter(array_unique(array_map('strval', array(
                 $transaction['client_transaction_id'] ?? '',
                 $transaction['foreign_transaction_id'] ?? '',
                 $transaction['checkout_reference'] ?? '',
@@ -123,7 +123,7 @@ class DchSumUpClient
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($ch, CURLOPT_TIMEOUT, 90);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json', 'Authorization: Bearer ' . $this->accessToken));
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Commerce-Automation-Hub/3.0');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Finance-Automation-Hub/3.0');
         $body = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);

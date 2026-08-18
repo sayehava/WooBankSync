@@ -1,8 +1,8 @@
 <?php
 
-require_once __DIR__ . '/woocommerceclient.class.php';
+require_once __DIR__ . '/fahwoocommerceclient.class.php';
 
-class CommerceAutomationHub
+class FinanceAutomationHub
 {
     private $db;
     private $conf;
@@ -23,8 +23,8 @@ class CommerceAutomationHub
     private function integrationManager()
     {
         if ($this->integrationManager === null) {
-            require_once __DIR__ . '/../helpers/WbsIntegrationManager.php';
-            $this->integrationManager = new WbsIntegrationManager($this->db, $this->conf);
+            require_once __DIR__ . '/../helpers/FahIntegrationManager.php';
+            $this->integrationManager = new FahIntegrationManager($this->db, $this->conf);
         }
         return $this->integrationManager;
     }
@@ -37,18 +37,18 @@ class CommerceAutomationHub
     public function inventory()
     {
         if ($this->inventoryManager === null) {
-            require_once __DIR__ . '/dchinventory.class.php';
-            $this->inventoryManager = new DchInventoryManager($this->db, $this->conf);
+            require_once __DIR__ . '/fahinventory.class.php';
+            $this->inventoryManager = new FahInventoryManager($this->db, $this->conf);
         }
         return $this->inventoryManager;
     }
 
     public function client()
     {
-        return new WbsWooCommerceClient(
-            $this->getConst('WBS_WOO_URL'),
-            $this->getConst('WBS_WOO_CONSUMER_KEY'),
-            $this->getConst('WBS_WOO_CONSUMER_SECRET')
+        return new FahWooCommerceClient(
+            $this->getConst('FAH_WOO_URL'),
+            $this->getConst('FAH_WOO_CONSUMER_KEY'),
+            $this->getConst('FAH_WOO_CONSUMER_SECRET')
         );
     }
 
@@ -56,8 +56,8 @@ class CommerceAutomationHub
     {
         $stats = array('imported' => 0, 'skipped' => 0, 'errors' => 0, 'messages' => array());
         $client = $this->client();
-        $statuses = $this->csvToArray($this->getConst('WBS_ORDER_STATUSES', 'processing,completed'));
-        $fromDate = $this->getConst('WBS_SYNC_FROM_DATE');
+        $statuses = $this->csvToArray($this->getConst('FAH_ORDER_STATUSES', 'processing,completed'));
+        $fromDate = $this->getConst('FAH_SYNC_FROM_DATE');
 
         for ($page = 1; $page <= $limitPages; $page++) {
             $orders = $client->getOrders($statuses, $fromDate, $page, $perPage);
@@ -75,7 +75,7 @@ class CommerceAutomationHub
             }
         }
 
-        $this->setConst('WBS_LAST_SYNC', dol_now(), 'chaine');
+        $this->setConst('FAH_LAST_SYNC', dol_now(), 'chaine');
         return $stats;
     }
 
@@ -99,8 +99,8 @@ class CommerceAutomationHub
             return $stats;
         }
         $client = $this->client();
-        $statuses = $this->csvToArray($this->getConst('WBS_ORDER_STATUSES', 'processing,completed'));
-        $orders = $client->getOrders($statuses, $this->getConst('WBS_SYNC_FROM_DATE'), $page, $batchSize);
+        $statuses = $this->csvToArray($this->getConst('FAH_ORDER_STATUSES', 'processing,completed'));
+        $orders = $client->getOrders($statuses, $this->getConst('FAH_SYNC_FROM_DATE'), $page, $batchSize);
         if ($orders === false) {
             $stats['errors'] = 1;
             $stats['messages'][] = $client->error ?: 'WooCommerce request failed while fetching orders.';
@@ -121,7 +121,7 @@ class CommerceAutomationHub
             );
         }
         $stats['has_more'] = count($orders) === $batchSize;
-        $this->setConst('WBS_LAST_SYNC', dol_now(), 'chaine');
+        $this->setConst('FAH_LAST_SYNC', dol_now(), 'chaine');
         return $stats;
     }
 
@@ -153,45 +153,45 @@ class CommerceAutomationHub
 
         $batchSize = max(1, min(100, (int) $batchSize));
         if ($connector === 'amazon') {
-            require_once __DIR__ . '/dchamazonclient.class.php';
-            $client = new DchAmazonClient(
-                $this->getConst('DCH_AMAZON_LWA_CLIENT_ID'),
-                $this->getConst('DCH_AMAZON_LWA_CLIENT_SECRET'),
-                $this->getConst('DCH_AMAZON_REFRESH_TOKEN'),
-                $this->getConst('DCH_AMAZON_SELLER_ID'),
-                $this->getConst('DCH_AMAZON_MARKETPLACE_IDS'),
-                $this->getConst('DCH_AMAZON_REGION', 'eu')
+            require_once __DIR__ . '/fahamazonclient.class.php';
+            $client = new FahAmazonClient(
+                $this->getConst('FAH_AMAZON_LWA_CLIENT_ID'),
+                $this->getConst('FAH_AMAZON_LWA_CLIENT_SECRET'),
+                $this->getConst('FAH_AMAZON_REFRESH_TOKEN'),
+                $this->getConst('FAH_AMAZON_SELLER_ID'),
+                $this->getConst('FAH_AMAZON_MARKETPLACE_IDS'),
+                $this->getConst('FAH_AMAZON_REGION', 'eu')
             );
-            $response = $client->getOrders($this->getConst('DCH_AMAZON_SYNC_FROM_DATE'), (string) $cursor, $batchSize);
+            $response = $client->getOrders($this->getConst('FAH_AMAZON_SYNC_FROM_DATE'), (string) $cursor, $batchSize);
             if ($response === false) {
                 $stats['errors'] = 1;
                 $stats['messages'][] = $client->error ?: 'Amazon request failed.';
                 return $stats;
             }
             $orders = $response['orders'];
-            if ((int) $this->getConst('DCH_AMAZON_FINANCE_ENABLED', '1') === 1) {
+            if ((int) $this->getConst('FAH_AMAZON_FINANCE_ENABLED', '1') === 1) {
                 foreach ($orders as $orderIndex => $amazonOrder) {
                     $financials = $client->getOrderFinancials((string) ($amazonOrder['id'] ?? ''));
                     if ($financials === false) {
-                        $orders[$orderIndex]['_dch_finance_available'] = false;
-                        $orders[$orderIndex]['_dch_finance_error'] = $client->error;
+                        $orders[$orderIndex]['_fah_finance_available'] = false;
+                        $orders[$orderIndex]['_fah_finance_error'] = $client->error;
                     } elseif (!empty($financials['available'])) {
                         $orders[$orderIndex]['fee'] = (float) $financials['fee'];
                         $orders[$orderIndex]['payout'] = (float) $financials['payout'];
-                        $orders[$orderIndex]['_dch_fee_source'] = 'Amazon Finances API';
-                        $orders[$orderIndex]['_dch_finance_available'] = true;
+                        $orders[$orderIndex]['_fah_fee_source'] = 'Amazon Finances API';
+                        $orders[$orderIndex]['_fah_finance_available'] = true;
                         if (!empty($financials['currency'])) $orders[$orderIndex]['currency'] = (string) $financials['currency'];
                     } else {
-                        $orders[$orderIndex]['_dch_finance_available'] = false;
+                        $orders[$orderIndex]['_fah_finance_available'] = false;
                     }
                 }
             }
             $stats['next_cursor'] = (string) $response['next_token'];
             $stats['has_more'] = $stats['next_cursor'] !== '';
         } else {
-            require_once __DIR__ . '/dchsumupclient.class.php';
-            $client = new DchSumUpClient($this->getConst('DCH_SUMUP_ACCESS_TOKEN'), $this->getConst('DCH_SUMUP_MERCHANT_CODE'));
-            $response = $client->getTransactions($this->getConst('DCH_SUMUP_SYNC_FROM_DATE'), (string) $cursor, $batchSize);
+            require_once __DIR__ . '/fahsumupclient.class.php';
+            $client = new FahSumUpClient($this->getConst('FAH_SUMUP_ACCESS_TOKEN'), $this->getConst('FAH_SUMUP_MERCHANT_CODE'));
+            $response = $client->getTransactions($this->getConst('FAH_SUMUP_SYNC_FROM_DATE'), (string) $cursor, $batchSize);
             if ($response === false) {
                 $stats['errors'] = 1;
                 $stats['messages'][] = $client->error ?: 'SumUp request failed.';
@@ -214,7 +214,7 @@ class CommerceAutomationHub
                 'message' => (string) ($result['message'] ?? ''),
             );
         }
-        $this->setConst('DCH_' . strtoupper($connector) . '_LAST_SYNC', dol_now(), 'chaine');
+        $this->setConst('FAH_' . strtoupper($connector) . '_LAST_SYNC', dol_now(), 'chaine');
         return $stats;
     }
 
@@ -222,14 +222,14 @@ class CommerceAutomationHub
     {
         list($schemaOk, $schemaMessage) = $this->inventory()->ensureSchema();
         if (!$schemaOk) return array(false, $schemaMessage);
-        require_once __DIR__ . '/dchamazonclient.class.php';
-        $client = new DchAmazonClient(
-            $this->getConst('DCH_AMAZON_LWA_CLIENT_ID'),
-            $this->getConst('DCH_AMAZON_LWA_CLIENT_SECRET'),
-            $this->getConst('DCH_AMAZON_REFRESH_TOKEN'),
-            $this->getConst('DCH_AMAZON_SELLER_ID'),
-            $this->getConst('DCH_AMAZON_MARKETPLACE_IDS'),
-            $this->getConst('DCH_AMAZON_REGION', 'eu')
+        require_once __DIR__ . '/fahamazonclient.class.php';
+        $client = new FahAmazonClient(
+            $this->getConst('FAH_AMAZON_LWA_CLIENT_ID'),
+            $this->getConst('FAH_AMAZON_LWA_CLIENT_SECRET'),
+            $this->getConst('FAH_AMAZON_REFRESH_TOKEN'),
+            $this->getConst('FAH_AMAZON_SELLER_ID'),
+            $this->getConst('FAH_AMAZON_MARKETPLACE_IDS'),
+            $this->getConst('FAH_AMAZON_REGION', 'eu')
         );
         $token = '';
         $count = 0;
@@ -250,12 +250,12 @@ class CommerceAutomationHub
     {
         list($schemaOk, $schemaMessage) = $this->inventory()->ensureSchema();
         if (!$schemaOk) return array(false, $schemaMessage);
-        require_once __DIR__ . '/dchsumupclient.class.php';
-        $client = new DchSumUpClient($this->getConst('DCH_SUMUP_ACCESS_TOKEN'), $this->getConst('DCH_SUMUP_MERCHANT_CODE'));
+        require_once __DIR__ . '/fahsumupclient.class.php';
+        $client = new FahSumUpClient($this->getConst('FAH_SUMUP_ACCESS_TOKEN'), $this->getConst('FAH_SUMUP_MERCHANT_CODE'));
         $cursor = '';
         $count = 0;
         for ($page = 0; $page < max(1, (int) $maxPages); $page++) {
-            $response = $client->getTransactions($this->getConst('DCH_SUMUP_SYNC_FROM_DATE'), $cursor, 100);
+            $response = $client->getTransactions($this->getConst('FAH_SUMUP_SYNC_FROM_DATE'), $cursor, 100);
             if ($response === false) return array(false, $client->error);
             foreach ($response['orders'] as $order) {
                 $this->inventory()->learnOrderProducts('sumup', $order);
@@ -272,7 +272,7 @@ class CommerceAutomationHub
         $connector = strtolower(trim((string) $connector));
         if (!in_array($connector, array('woocommerce', 'amazon', 'sumup'), true)) $connector = 'woocommerce';
         $channelLabel = $connector === 'woocommerce' ? 'WooCommerce' : ($connector === 'sumup' ? 'SumUp' : 'Amazon');
-        $order['_dch_connector'] = $connector;
+        $order['_fah_connector'] = $connector;
         $orderId = (string) ($order['id'] ?? '');
         $orderNumber = isset($order['number']) ? (string) $order['number'] : $orderId;
         $paymentMethod = isset($order['payment_method']) ? trim((string) $order['payment_method']) : '';
@@ -304,7 +304,7 @@ class CommerceAutomationHub
         $stockMessage = $this->formatStockResult($stockResult);
 
         if ($this->isOrderSynced($orderId, $connector)) {
-            if ($connector !== 'woocommerce' && !empty($order['_dch_fee_source'])) $this->updateSyncedConnectorFinancials($order, $connector);
+            if ($connector !== 'woocommerce' && !empty($order['_fah_fee_source'])) $this->updateSyncedConnectorFinancials($order, $connector);
             return array('status' => 'skipped', 'message' => 'Skipped ' . $channelLabel . ' order #' . $orderNumber . ': already synced.' . $stockMessage);
         }
 
@@ -339,8 +339,8 @@ class CommerceAutomationHub
         $fee = $connector === 'woocommerce'
             ? $this->resolveWooFee($order, $gatewayConfig)
             : $this->normalizeAmount($order['fee'] ?? 0);
-        if ($connector === 'woocommerce' && $fee <= 0 && !empty($order['_dch_fee_error'])) {
-            $message = $channelLabel . ' order #' . $orderNumber . ': ' . $order['_dch_fee_error'] . ' No bank entry was created with an incorrect zero fee.' . $stockMessage;
+        if ($connector === 'woocommerce' && $fee <= 0 && !empty($order['_fah_fee_error'])) {
+            $message = $channelLabel . ' order #' . $orderNumber . ': ' . $order['_fah_fee_error'] . ' No bank entry was created with an incorrect zero fee.' . $stockMessage;
             $this->insertLog($order, 0, $gross, 0, 0, 0, 'pending_finance', $message, $dateOrder, $invoiceNumber, 0);
             return array('status' => 'skipped', 'message' => $message);
         }
@@ -349,8 +349,8 @@ class CommerceAutomationHub
             ? $this->extractPayoutAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '')
             : $this->normalizeAmount($order['payout'] ?? 0);
 
-        if ($connector === 'amazon' && (int) $this->getConst('DCH_AMAZON_FINANCE_ENABLED', '1') === 1 && empty($order['_dch_finance_available'])) {
-            $detail = !empty($order['_dch_finance_error']) ? ' ' . (string) $order['_dch_finance_error'] : ' Amazon notes that financial events may take up to 48 hours to appear.';
+        if ($connector === 'amazon' && (int) $this->getConst('FAH_AMAZON_FINANCE_ENABLED', '1') === 1 && empty($order['_fah_finance_available'])) {
+            $detail = !empty($order['_fah_finance_error']) ? ' ' . (string) $order['_fah_finance_error'] : ' Amazon notes that financial events may take up to 48 hours to appear.';
             $message = 'Amazon order #' . $orderNumber . ': stock and sales were processed, but the exact fee/proceeds are finance pending; no bank entry was created.' . $detail . $stockMessage;
             $this->insertLog($order, 0, $gross, 0, 0, 0, 'pending_finance', $message, $dateOrder, '', 0);
             return array('status' => 'skipped', 'message' => $message);
@@ -394,7 +394,7 @@ class CommerceAutomationHub
             $payoutMatch = 'no_source';
         }
 
-        $dryRun = (int) $this->getConst('WBS_DRY_RUN', '0') === 1;
+        $dryRun = (int) $this->getConst('FAH_DRY_RUN', '0') === 1;
         $buyerName = $this->extractBuyerName($order);
         $labelBase = strtoupper($connector === 'woocommerce' ? 'WOO' : $connector) . ' - #' . $orderNumber;
         if (!empty($buyerName)) $labelBase .= ' ' . $buyerName;
@@ -478,15 +478,15 @@ class CommerceAutomationHub
         $gross = $this->normalizeAmount($order['total'] ?? 0);
         $payout = $this->normalizeAmount($order['payout'] ?? 0);
         if ($payout <= 0) $payout = max(0.0, $gross - $fee);
-        $resql = $this->db->query('SELECT rowid, bank_line_id_gross FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity
+        $resql = $this->db->query('SELECT rowid, bank_line_id_gross FROM ' . MAIN_DB_PREFIX . 'fah_sync_log WHERE entity=' . (int) $this->conf->entity
             . " AND connector='" . $this->db->escape($connector) . "' AND woo_order_id='" . $this->db->escape($orderId) . "' LIMIT 1");
         $row = $resql ? $this->db->fetch_object($resql) : null;
         if (!$row) return false;
         if (!empty($row->bank_line_id_gross)) {
             $this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'bank SET amount=' . price2num($payout, 'MT') . ' WHERE rowid=' . (int) $row->bank_line_id_gross);
         }
-        $source = (string) ($order['_dch_fee_source'] ?? ucfirst($connector) . ' API');
-        return $this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'woobanksync_log SET fee_amount=' . price2num($fee, 'MT')
+        $source = (string) ($order['_fah_fee_source'] ?? ucfirst($connector) . ' API');
+        return $this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'fah_sync_log SET fee_amount=' . price2num($fee, 'MT')
             . ', payout_amount=' . price2num($payout, 'MT')
             . ", fee_source='" . $this->db->escape($source) . "', sync_message='Financial costs refreshed from " . $this->db->escape($source) . "'"
             . ' WHERE rowid=' . (int) $row->rowid);
@@ -494,13 +494,13 @@ class CommerceAutomationHub
 
     private function isSumUpPosOwnedTransaction(array $order)
     {
-        $mode = strtolower(trim((string) $this->getConst('DCH_SUMUP_POS_DUPLICATE_MODE', 'off')));
+        $mode = strtolower(trim((string) $this->getConst('FAH_SUMUP_POS_DUPLICATE_MODE', 'off')));
         if ($mode === 'all') return true;
         if ($mode !== 'reference') return false;
 
-        $prefixes = $this->csvToArray($this->getConst('DCH_SUMUP_POS_REFERENCE_PREFIXES', ''));
+        $prefixes = $this->csvToArray($this->getConst('FAH_SUMUP_POS_REFERENCE_PREFIXES', ''));
         if (empty($prefixes)) return false;
-        $references = (array) ($order['_dch_source_references'] ?? array());
+        $references = (array) ($order['_fah_source_references'] ?? array());
         $references[] = (string) ($order['number'] ?? '');
         $references[] = (string) ($order['transaction_id'] ?? '');
         foreach ($references as $reference) {
@@ -548,7 +548,7 @@ class CommerceAutomationHub
         }
 
         $orders = array();
-        $statuses = $this->csvToArray($this->getConst('WBS_ORDER_STATUSES', 'processing,completed'));
+        $statuses = $this->csvToArray($this->getConst('FAH_ORDER_STATUSES', 'processing,completed'));
         for ($page = 1; $page <= 5; $page++) {
             $batch = $client->getOrders($statuses, '', $page, 100);
             if ($batch === false) return array(false, $client->error);
@@ -592,12 +592,12 @@ class CommerceAutomationHub
 
         $meta = $this->discoverMetaKeysByGateway($orders);
         $invoiceKeys = $this->discoverInvoiceKeys($orders);
-        $invoiceAvailable = (!empty($invoiceKeys) || (int) $this->getConst('WBS_DOCUMENT_SYNC_ENABLED', '0') === 1) ? '1' : '0';
+        $invoiceAvailable = (!empty($invoiceKeys) || (int) $this->getConst('FAH_DOCUMENT_SYNC_ENABLED', '0') === 1) ? '1' : '0';
 
-        $this->setConst('WBS_GATEWAYS_JSON', json_encode($allGateways), 'chaine');
-        $this->setConst('WBS_META_KEYS_JSON', json_encode($meta), 'chaine');
-        $this->setConst('WBS_WOO_INVOICE_KEYS_JSON', json_encode($invoiceKeys), 'chaine');
-        $this->setConst('WBS_WOO_INVOICE_AVAILABLE', $invoiceAvailable, 'yesno');
+        $this->setConst('FAH_GATEWAYS_JSON', json_encode($allGateways), 'chaine');
+        $this->setConst('FAH_META_KEYS_JSON', json_encode($meta), 'chaine');
+        $this->setConst('FAH_WOO_INVOICE_KEYS_JSON', json_encode($invoiceKeys), 'chaine');
+        $this->setConst('FAH_WOO_INVOICE_AVAILABLE', $invoiceAvailable, 'yesno');
 
         return array(true, 'Detected ' . count($allGateways) . ' relevant payment methods/gateways (' . count($orders) . ' recent orders scanned). Only active gateways and gateways used in existing orders are listed. Found ' . count($invoiceKeys) . ' possible invoice meta keys.');
     }
@@ -657,7 +657,7 @@ class CommerceAutomationHub
     public function backfillWooStock($limit = 2000)
     {
         if (!$this->inventory()->stockEnabled('woocommerce')) return array(false, 'Enable WooCommerce stock deduction before applying past sales.');
-        $sql = 'SELECT woo_order_id FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity
+        $sql = 'SELECT woo_order_id FROM ' . MAIN_DB_PREFIX . 'fah_sync_log WHERE entity=' . (int) $this->conf->entity
             . $this->logConnectorCondition('woocommerce') . " AND sync_status IN ('synced','dryrun','pending_finance') ORDER BY rowid ASC LIMIT " . max(1, min(10000, (int) $limit));
         $resql = $this->db->query($sql);
         if (!$resql) return array(false, 'Could not read synced WooCommerce orders: ' . $this->db->lasterror());
@@ -685,7 +685,7 @@ class CommerceAutomationHub
 
     public function autoCreateAndMapAccounts()
     {
-        $gateways = $this->getJsonConst('WBS_GATEWAYS_JSON', array());
+        $gateways = $this->getJsonConst('FAH_GATEWAYS_JSON', array());
         if (empty($gateways)) return array(false, 'No active WooCommerce gateways detected. First save API settings and click Refresh from WooCommerce.');
         $map = $this->gatewayMap();
         $created = 0;
@@ -708,7 +708,7 @@ class CommerceAutomationHub
                 $failed[] = $gid . ': ' . $this->db->lasterror();
             }
         }
-        $this->setConst('WBS_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
+        $this->setConst('FAH_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
         $message = 'Created ' . $created . ', reused ' . $existing . ', mapped ' . ($created + $existing) . ' WooCommerce payment methods.';
         if (!empty($failed)) return array(false, $message . ' Failed: ' . implode(' | ', $failed));
         return array(true, $message);
@@ -718,7 +718,7 @@ class CommerceAutomationHub
     public function getDifferenceCheckOrders()
     {
         $rows = array();
-        $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
             . $this->logConnectorCondition('woocommerce')
             . " AND sync_status='synced' ORDER BY rowid DESC";
@@ -734,7 +734,7 @@ class CommerceAutomationHub
     public function resyncDifferences(array $orderIds = array(), $force = false)
     {
         $stats = array('checked' => 0, 'updated' => 0, 'unchanged' => 0, 'errors' => 0, 'messages' => array(), 'items' => array());
-        $table = MAIN_DB_PREFIX . 'woobanksync_log';
+        $table = MAIN_DB_PREFIX . 'fah_sync_log';
 
         $sql = 'SELECT * FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity . $this->logConnectorCondition('woocommerce') . " AND sync_status='synced' ORDER BY rowid DESC";
         if (!empty($orderIds)) {
@@ -808,9 +808,9 @@ class CommerceAutomationHub
                 $paymentMethod = (string) ($order['payment_method'] ?? '');
                 $gatewayConfig = $this->resolveGatewayConfig($paymentMethod, $map);
                 $newFee = $this->resolveWooFee($order, $gatewayConfig);
-                if ($newFee <= 0 && !empty($order['_dch_fee_error'])) {
+                if ($newFee <= 0 && !empty($order['_fah_fee_error'])) {
                     $stats['errors']++;
-                    $stats['messages'][] = 'Order #' . $logRow->woo_order_number . ': ' . $order['_dch_fee_error'];
+                    $stats['messages'][] = 'Order #' . $logRow->woo_order_number . ': ' . $order['_fah_fee_error'];
                     $stats['items'][] = array('id' => $orderId, 'number' => (string) $logRow->woo_order_number, 'status' => 'error');
                     continue;
                 }
@@ -822,7 +822,7 @@ class CommerceAutomationHub
                 $invoiceDiff = $hasIntegrations && $newInvoiceNumber !== $oldInvoiceNumber;
                 $grossDiff = abs($newGross - $oldGross) > 0.005;
                 $feeDiff = abs($newFee - $oldFee) > 0.005;
-                $pdfDownloadEnabled = (int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1;
+                $pdfDownloadEnabled = (int) $this->getConst('FAH_PDF_DOWNLOAD_ENABLED', '0') === 1;
                 $pdfMissing = $hasIntegrations && $pdfDownloadEnabled && $newPdfUrl !== '' && $oldEcmPath === '';
                 $pdfUrlChanged = $hasIntegrations && $newPdfUrl !== $oldPdfUrl;
 
@@ -881,12 +881,12 @@ class CommerceAutomationHub
 
         $oldEcmPath = (string) ($logRow->pdf_ecm_filepath ?? '');
         $pdfEcmFilepath = $oldEcmPath;
-        if ((int) $this->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') === 1) {
+        if ((int) $this->getConst('FAH_PDF_DOWNLOAD_ENABLED', '0') === 1) {
             $result = $this->downloadAndSavePdf($orderId, $orderNumber, $newInvoiceNumber, $newPdfUrl);
             if ($result['ok'] && !$result['already']) $pdfEcmFilepath = $result['filepath'];
         }
 
-        $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'woobanksync_log SET'
+        $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'fah_sync_log SET'
             . " woo_invoice_number='" . $this->db->escape($newInvoiceNumber) . "'"
             . ', gross_amount=' . price2num($newGross, 'MT')
             . ', fee_amount=' . price2num($newFee, 'MT')
@@ -904,7 +904,7 @@ class CommerceAutomationHub
 
     public function desyncAllSyncedEntries()
     {
-        $table = MAIN_DB_PREFIX . 'woobanksync_log';
+        $table = MAIN_DB_PREFIX . 'fah_sync_log';
         $bankIds = array();
 
         // 1) Prefer exact bank row ids stored in our sync log.
@@ -917,7 +917,7 @@ class CommerceAutomationHub
                 if (!empty($obj->dolibarr_bank_account_id)) $bankAccountIds[] = (int) $obj->dolibarr_bank_account_id;
             }
         } else {
-            return array(false, 'Could not read Commerce Automation Hub log: ' . $this->db->lasterror());
+            return array(false, 'Could not read Finance Automation Hub log: ' . $this->db->lasterror());
         }
 
         // 2) Also include mapped virtual bank accounts so older rows whose ids were not logged can be found safely.
@@ -1002,7 +1002,7 @@ class CommerceAutomationHub
             }
         }
         // Also collect from cache table
-        $cacheT = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        $cacheT = MAIN_DB_PREFIX . 'fah_order_cache';
         $cols = $this->getTableColumns($cacheT);
         if (in_array('pdf_ecm_filepath', $cols, true)) {
             $cRes = $this->db->query("SELECT pdf_ecm_filepath FROM $cacheT WHERE entity=" . (int) $this->conf->entity . " AND pdf_ecm_filepath IS NOT NULL AND pdf_ecm_filepath!=''");
@@ -1040,9 +1040,9 @@ class CommerceAutomationHub
         $deletedLogs = $this->countRows($table, 'entity=' . (int) $this->conf->entity);
         if (!$this->db->query('DELETE FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity)) {
             $this->db->rollback();
-            return array(false, 'Could not clear Commerce Automation Hub log: ' . $this->db->lasterror());
+            return array(false, 'Could not clear Finance Automation Hub log: ' . $this->db->lasterror());
         }
-        $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache WHERE entity=' . (int) $this->conf->entity);
+        $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'fah_order_cache WHERE entity=' . (int) $this->conf->entity);
         $this->db->commit();
 
         return array(true, 'Desync complete.', array(
@@ -1065,7 +1065,7 @@ class CommerceAutomationHub
     {
         $messages = array();
         $prefix = MAIN_DB_PREFIX;
-        $table = $prefix . 'woobanksync_log';
+        $table = $prefix . 'fah_sync_log';
 
         $sql = "CREATE TABLE IF NOT EXISTS " . $table . " (" .
             "rowid integer AUTO_INCREMENT PRIMARY KEY," .
@@ -1116,22 +1116,22 @@ class CommerceAutomationHub
             }
         }
 
-        $legacyIndex = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_woobanksync_entity_order'");
+        $legacyIndex = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_fah_entity_order'");
         if ($legacyIndex && $this->db->num_rows($legacyIndex) > 0) {
-            if (!$this->db->query("ALTER TABLE " . $table . " DROP INDEX uk_woobanksync_entity_order")) {
+            if (!$this->db->query("ALTER TABLE " . $table . " DROP INDEX uk_fah_entity_order")) {
                 return array(false, 'Database check failed while upgrading the connector-aware order key: ' . $this->db->lasterror());
             }
         }
-        $resql = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_dch_entity_connector_order'");
+        $resql = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_fah_entity_connector_order'");
         if ($resql && $this->db->num_rows($resql) == 0) {
-            if (!$this->db->query("ALTER TABLE " . $table . " ADD UNIQUE KEY uk_dch_entity_connector_order (entity, connector, woo_order_id)")) {
+            if (!$this->db->query("ALTER TABLE " . $table . " ADD UNIQUE KEY uk_fah_entity_connector_order (entity, connector, woo_order_id)")) {
                 $messages[] = 'Connector-aware unique key could not be added, maybe duplicate old rows exist: ' . $this->db->lasterror();
             } else {
                 $messages[] = 'Connector-aware unique key is ready.';
             }
         }
 
-        $cacheTable = $prefix . 'woobanksync_order_cache';
+        $cacheTable = $prefix . 'fah_order_cache';
         $sql = "CREATE TABLE IF NOT EXISTS " . $cacheTable . " (" .
             "rowid integer AUTO_INCREMENT PRIMARY KEY," .
             "entity integer NOT NULL DEFAULT 1," .
@@ -1142,7 +1142,7 @@ class CommerceAutomationHub
             "pdf_ecm_filepath varchar(500) DEFAULT NULL," .
             "raw_order_json longtext DEFAULT NULL," .
             "date_updated datetime DEFAULT NULL," .
-            "UNIQUE KEY uk_wbs_order_cache (entity, woo_order_id)" .
+            "UNIQUE KEY uk_fah_order_cache (entity, woo_order_id)" .
             ") ENGINE=innodb";
         if (!$this->db->query($sql)) {
             return array(false, 'Database check failed while creating order cache table: ' . $this->db->lasterror());
@@ -1161,33 +1161,7 @@ class CommerceAutomationHub
             $messages[] = 'Added full WooCommerce order JSON cache.';
         }
 
-        list($menuOk, $menuMessage) = $this->cleanupLegacyBankMenu();
-        if (!$menuOk) return array(false, $menuMessage);
-        $messages[] = $menuMessage;
-
         return array(true, implode(' ', $messages));
-    }
-
-    /** Remove the pre-2.2 left-menu entry that Dolibarr may retain under Bank/Cash. */
-    public function cleanupLegacyBankMenu()
-    {
-        $table = MAIN_DB_PREFIX . 'menu';
-        $columns = $this->getTableColumns($table);
-        if (empty($columns) || !in_array('url', $columns, true)) {
-            return array(false, 'Could not inspect the Dolibarr menu table while removing the legacy Bank/Cash entry.');
-        }
-
-        $signature = array();
-        if (in_array('mainmenu', $columns, true)) $signature[] = "mainmenu='bank'";
-        if (in_array('leftmenu', $columns, true)) $signature[] = "leftmenu='woobanksync'";
-        if (empty($signature)) return array(false, 'The Dolibarr menu table has no compatible menu signature columns.');
-
-        $where = "url LIKE '%/custom/woobanksync/index.php%' AND (" . implode(' OR ', $signature) . ')';
-        if (in_array('entity', $columns, true)) $where .= ' AND entity IN (0,' . (int) $this->conf->entity . ')';
-        if (!$this->db->query('DELETE FROM ' . $table . ' WHERE ' . $where)) {
-            return array(false, 'Could not remove the legacy Commerce Automation Hub entry from Bank/Cash: ' . $this->db->lasterror());
-        }
-        return array(true, 'Legacy Bank/Cash menu entry is removed.');
     }
 
     public function createDocumentFolder()
@@ -1229,12 +1203,12 @@ class CommerceAutomationHub
             if ($code !== '' && !isset($fields[$code])) return array(false, $name . ' must be mapped to a numeric bank-entry custom field.');
         }
         if ($grossCode !== '' && $grossCode === $feeCode) return array(false, 'Gross amount and fee must use different custom fields.');
-        $invoiceCode = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        $invoiceCode = trim((string) $this->getConst('FAH_BANK_EXTRAFIELD_CODE', ''));
         if ($invoiceCode !== '' && ($grossCode === $invoiceCode || $feeCode === $invoiceCode)) {
             return array(false, 'Amount fields cannot use the mapped invoice-number custom field.');
         }
-        $this->setConst('WBS_EXTRAFIELD_GROSS_CODE', $grossCode, 'chaine');
-        $this->setConst('WBS_EXTRAFIELD_FEE_CODE', $feeCode, 'chaine');
+        $this->setConst('FAH_EXTRAFIELD_GROSS_CODE', $grossCode, 'chaine');
+        $this->setConst('FAH_EXTRAFIELD_FEE_CODE', $feeCode, 'chaine');
         foreach (array($grossCode => $grossLabel, $feeCode => $feeLabel) as $code => $label) {
             $label = trim((string) $label);
             if ($code !== '' && $label !== '') {
@@ -1253,12 +1227,12 @@ class CommerceAutomationHub
         $failed  = array();
 
         $toCreate = array(
-            'wbs_gross_amount' => array('label' => trim((string) $grossLabel) ?: 'WooCommerce gross amount', 'const' => 'WBS_EXTRAFIELD_GROSS_CODE'),
-            'wbs_fee_amount'   => array('label' => trim((string) $feeLabel) ?: 'WooCommerce fee amount', 'const' => 'WBS_EXTRAFIELD_FEE_CODE'),
+            'fah_gross_amount' => array('label' => trim((string) $grossLabel) ?: 'WooCommerce gross amount', 'const' => 'FAH_EXTRAFIELD_GROSS_CODE'),
+            'fah_fee_amount'   => array('label' => trim((string) $feeLabel) ?: 'WooCommerce fee amount', 'const' => 'FAH_EXTRAFIELD_FEE_CODE'),
         );
 
         $existingFields = $this->getBankAmountExtraFields();
-        $claimed = array_filter(array(trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''))));
+        $claimed = array_filter(array(trim((string) $this->getConst('FAH_BANK_EXTRAFIELD_CODE', ''))));
 
         foreach ($toCreate as $code => $info) {
             $currentMapping = trim((string) $this->getConst($info['const'], ''));
@@ -1277,7 +1251,7 @@ class CommerceAutomationHub
                     '24,8',
                     'bank',
                     0, 0, '', '', 1, '', '1',
-                    'Amount field imported from a commerce channel by Commerce Automation Hub',
+                    'Amount field imported from a commerce channel by Finance Automation Hub',
                     '', (string) $this->conf->entity, '', '1'
                 );
                 if ($result <= 0) {
@@ -1297,10 +1271,10 @@ class CommerceAutomationHub
             return array(false, 'Failed to create: ' . implode(', ', $failed) . '. Created: ' . implode(', ', $created) . '. Reused/skipped: ' . implode(', ', $reused) . '.');
         }
         list($mappingOk, $mappingMessage) = $this->saveAmountExtraFieldMapping(
-            $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', ''),
-            $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''),
-            $toCreate['wbs_gross_amount']['label'],
-            $toCreate['wbs_fee_amount']['label']
+            $this->getConst('FAH_EXTRAFIELD_GROSS_CODE', ''),
+            $this->getConst('FAH_EXTRAFIELD_FEE_CODE', ''),
+            $toCreate['fah_gross_amount']['label'],
+            $toCreate['fah_fee_amount']['label']
         );
         if (!$mappingOk) return array(false, $mappingMessage);
         return array(true, 'WooCommerce amount custom fields ready. Created: ' . (empty($created) ? 'none' : implode(', ', $created)) . '. Reused/skipped: ' . (empty($reused) ? 'none' : implode(', ', $reused)) . '.');
@@ -1311,12 +1285,12 @@ class CommerceAutomationHub
         $code = trim((string) $code);
         if ($enabled) {
             if ($code === '' || !isset($this->getBankExtraFields()[$code])) return array(false, 'Invoice number must be mapped to a text bank-entry custom field.');
-            $grossCode = trim((string) $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', ''));
-            $feeCode = trim((string) $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''));
+            $grossCode = trim((string) $this->getConst('FAH_EXTRAFIELD_GROSS_CODE', ''));
+            $feeCode = trim((string) $this->getConst('FAH_EXTRAFIELD_FEE_CODE', ''));
             if ($code === $grossCode || $code === $feeCode) return array(false, 'Invoice number cannot use a mapped amount field.');
         }
-        $this->setConst('WBS_BANK_EXTRAFIELD_CODE', $code, 'chaine');
-        $this->setConst('WBS_BANK_EXTRAFIELD_ENABLED', $enabled ? '1' : '0', 'yesno');
+        $this->setConst('FAH_BANK_EXTRAFIELD_CODE', $code, 'chaine');
+        $this->setConst('FAH_BANK_EXTRAFIELD_ENABLED', $enabled ? '1' : '0', 'yesno');
         $label = trim((string) $label);
         if ($code !== '' && $label !== '') {
             $this->db->query('UPDATE ' . MAIN_DB_PREFIX . "extrafields SET label='" . $this->db->escape(substr($label, 0, 255)) . "' WHERE elementtype='bank' AND name='" . $this->db->escape($code) . "' AND entity IN (0," . (int) $this->conf->entity . ')');
@@ -1326,7 +1300,7 @@ class CommerceAutomationHub
 
     public function createAndMapInvoiceBankExtraField($label = '')
     {
-        $mapped = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        $mapped = trim((string) $this->getConst('FAH_BANK_EXTRAFIELD_CODE', ''));
         $label = trim((string) $label) ?: 'WooCommerce invoice number';
         if ($mapped !== '' && isset($this->getBankExtraFields()[$mapped])) {
             list($ok, $msg) = $this->saveInvoiceExtraFieldMapping(true, $mapped, $label);
@@ -1370,7 +1344,7 @@ class CommerceAutomationHub
 
     public function repairExistingBankExtraFields()
     {
-        $sql = 'SELECT bank_line_id_gross, gross_amount, fee_amount, woo_invoice_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        $sql = 'SELECT bank_line_id_gross, gross_amount, fee_amount, woo_invoice_number FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
             . ' WHERE entity=' . (int) $this->conf->entity . $this->logConnectorCondition('woocommerce')
             . " AND sync_status='synced' AND bank_line_id_gross > 0";
         $resql = $this->db->query($sql);
@@ -1394,28 +1368,28 @@ class CommerceAutomationHub
 
     public function saveGatewayMapFromPost()
     {
-        $gateways = $this->getJsonConst('WBS_GATEWAYS_JSON', array());
+        $gateways = $this->getJsonConst('FAH_GATEWAYS_JSON', array());
         $map = array();
         foreach ($gateways as $gateway) {
             $gid = (string) $gateway['id'];
             $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $gid);
             $map[$gid] = array(
-                'bank_id'    => (int) GETPOST('WBS_MAP_BANK_' . $safe, 'int'),
-                'fee_key'    => GETPOST('WBS_MAP_FEE_' . $safe, 'restricthtml'),
-                'payout_key' => GETPOST('WBS_MAP_PAYOUT_' . $safe, 'restricthtml'),
+                'bank_id'    => (int) GETPOST('FAH_MAP_BANK_' . $safe, 'int'),
+                'fee_key'    => GETPOST('FAH_MAP_FEE_' . $safe, 'restricthtml'),
+                'payout_key' => GETPOST('FAH_MAP_PAYOUT_' . $safe, 'restricthtml'),
             );
         }
-        $this->setConst('WBS_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
+        $this->setConst('FAH_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
     }
 
     public function channelFinanceMap($connector)
     {
         $connector = strtolower(trim((string) $connector));
         if (!in_array($connector, array('amazon', 'sumup'), true)) return array();
-        $key = 'DCH_' . strtoupper($connector) . '_FINANCE_MAP_JSON';
+        $key = 'FAH_' . strtoupper($connector) . '_FINANCE_MAP_JSON';
         $map = $this->getJsonConst($key, array());
         if (!empty($map)) return $map;
-        $legacyBankId = (int) $this->getConst('DCH_' . strtoupper($connector) . '_BANK_ID', '0');
+        $legacyBankId = (int) $this->getConst('FAH_' . strtoupper($connector) . '_BANK_ID', '0');
         return array($connector => array('bank_id' => $legacyBankId));
     }
 
@@ -1425,8 +1399,8 @@ class CommerceAutomationHub
         if (!in_array($connector, array('amazon', 'sumup'), true)) return array(false, 'Unknown connector finance mapping.');
         $bankId = max(0, (int) GETPOST('finance_bank_id', 'int'));
         $map = array($connector => array('bank_id' => $bankId));
-        $this->setConst('DCH_' . strtoupper($connector) . '_FINANCE_MAP_JSON', json_encode($map), 'chaine');
-        $this->setConst('DCH_' . strtoupper($connector) . '_BANK_ID', (string) $bankId, 'chaine');
+        $this->setConst('FAH_' . strtoupper($connector) . '_FINANCE_MAP_JSON', json_encode($map), 'chaine');
+        $this->setConst('FAH_' . strtoupper($connector) . '_BANK_ID', (string) $bankId, 'chaine');
         return array(true, ucfirst($connector) . ' virtual bank mapping saved.');
     }
 
@@ -1439,21 +1413,21 @@ class CommerceAutomationHub
         $accountId = $this->findOrCreateVirtualBankAccount($label, strtoupper(substr($connector, 0, 8)), $wasExisting);
         if ($accountId <= 0) return array(false, 'Could not create the virtual bank account: ' . $this->db->lasterror());
         $map = array($connector => array('bank_id' => $accountId));
-        $this->setConst('DCH_' . strtoupper($connector) . '_FINANCE_MAP_JSON', json_encode($map), 'chaine');
-        $this->setConst('DCH_' . strtoupper($connector) . '_BANK_ID', (string) $accountId, 'chaine');
+        $this->setConst('FAH_' . strtoupper($connector) . '_FINANCE_MAP_JSON', json_encode($map), 'chaine');
+        $this->setConst('FAH_' . strtoupper($connector) . '_BANK_ID', (string) $accountId, 'chaine');
         return array(true, ($wasExisting ? 'Reused and mapped ' : 'Created and mapped ') . $label . '.');
     }
 
     public function gatewayMap()
     {
-        $map = $this->getJsonConst('WBS_GATEWAY_MAP_JSON', array());
+        $map = $this->getJsonConst('FAH_GATEWAY_MAP_JSON', array());
         if (!empty($map)) return $map;
 
         $legacy = array();
-        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_PAYPAL')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_PAYPAL_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
-        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_STRIPE')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_STRIPE_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
-        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_AMAZONPAY')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_AMAZONPAY_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
-        foreach ($this->csvToArray($this->getConst('WBS_GATEWAY_BANK')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('WBS_DIRECT_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        foreach ($this->csvToArray($this->getConst('FAH_GATEWAY_PAYPAL')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('FAH_PAYPAL_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        foreach ($this->csvToArray($this->getConst('FAH_GATEWAY_STRIPE')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('FAH_STRIPE_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        foreach ($this->csvToArray($this->getConst('FAH_GATEWAY_AMAZONPAY')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('FAH_AMAZONPAY_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
+        foreach ($this->csvToArray($this->getConst('FAH_GATEWAY_BANK')) as $g) $legacy[$g] = array('bank_id' => (int) $this->getConst('FAH_DIRECT_BANK_ID'), 'fee_key' => '', 'payout_key' => '');
         return $legacy;
     }
 
@@ -1575,9 +1549,9 @@ class CommerceAutomationHub
 
         $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
         if (strpos($paymentMethod, 'stripe') === false && strpos($paymentMethod, 'klarna') === false && strpos($paymentMethod, 'woocommerce_payments') === false) return 0.0;
-        $secretKey = trim((string) $this->getConst('DCH_STRIPE_SECRET_KEY'));
+        $secretKey = trim((string) $this->getConst('FAH_STRIPE_SECRET_KEY'));
         if ($secretKey === '') {
-            $order['_dch_fee_error'] = 'Exact Stripe fee unavailable: configure the Stripe secret key in WooCommerce settings.';
+            $order['_fah_fee_error'] = 'Exact Stripe fee unavailable: configure the Stripe secret key in WooCommerce settings.';
             return 0.0;
         }
 
@@ -1586,14 +1560,14 @@ class CommerceAutomationHub
         foreach ((array) ($order['meta_data'] ?? array()) as $meta) {
             if (in_array((string) ($meta['key'] ?? ''), $referenceKeys, true)) $references[] = (string) ($meta['value'] ?? '');
         }
-        require_once __DIR__ . '/dchstripeclient.class.php';
-        $client = new DchStripeClient($secretKey, $this->getConst('DCH_STRIPE_ACCOUNT_ID'));
+        require_once __DIR__ . '/fahstripeclient.class.php';
+        $client = new FahStripeClient($secretKey, $this->getConst('FAH_STRIPE_ACCOUNT_ID'));
         $fee = $client->getFee($references, (string) ($order['currency'] ?? ''));
         if ($fee !== false) {
-            $order['_dch_fee_source'] = 'Stripe balance transaction API';
+            $order['_fah_fee_source'] = 'Stripe balance transaction API';
             return (float) $fee;
         }
-        $order['_dch_fee_error'] = 'Exact Stripe fee lookup failed: ' . $client->error;
+        $order['_fah_fee_error'] = 'Exact Stripe fee lookup failed: ' . $client->error;
         return 0.0;
     }
 
@@ -1685,8 +1659,8 @@ class CommerceAutomationHub
     private function writeBankAmountExtraFields($bankLineId, $gross, $fee)
     {
         if ($bankLineId <= 0) return array(false, 'Invalid bank entry.');
-        $grossCode = trim((string) $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', ''));
-        $feeCode   = trim((string) $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''));
+        $grossCode = trim((string) $this->getConst('FAH_EXTRAFIELD_GROSS_CODE', ''));
+        $feeCode   = trim((string) $this->getConst('FAH_EXTRAFIELD_FEE_CODE', ''));
         if ($grossCode === '' && $feeCode === '') return array(true, '');
 
         $numericFields = $this->getBankAmountExtraFields();
@@ -1694,7 +1668,7 @@ class CommerceAutomationHub
             if ($code !== '' && !isset($numericFields[$code])) return array(false, ucfirst($name) . ' mapping is not a numeric bank custom field.');
         }
         if ($grossCode !== '' && $grossCode === $feeCode) return array(false, 'Gross and fee mappings point to the same field.');
-        $invoiceCode = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        $invoiceCode = trim((string) $this->getConst('FAH_BANK_EXTRAFIELD_CODE', ''));
         if ($invoiceCode !== '' && ($grossCode === $invoiceCode || $feeCode === $invoiceCode)) return array(false, 'An amount mapping points to the invoice-number field.');
 
         $table   = MAIN_DB_PREFIX . 'bank_extrafields';
@@ -1737,18 +1711,18 @@ class CommerceAutomationHub
 
     private function nativeInvoiceReferenceEnabled()
     {
-        return (int) $this->getConst('WBS_DOCUMENT_SYNC_ENABLED', '0') === 1;
+        return (int) $this->getConst('FAH_DOCUMENT_SYNC_ENABLED', '0') === 1;
     }
 
     private function setBankInvoiceExtraField($bankLineId, $invoiceNumber, $allowEmpty = false)
     {
-        if ((int) $this->getConst('WBS_BANK_EXTRAFIELD_ENABLED', '0') !== 1 || $bankLineId <= 0) return true;
+        if ((int) $this->getConst('FAH_BANK_EXTRAFIELD_ENABLED', '0') !== 1 || $bankLineId <= 0) return true;
         if (!$allowEmpty && empty($invoiceNumber)) return true;
 
-        $code = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        $code = trim((string) $this->getConst('FAH_BANK_EXTRAFIELD_CODE', ''));
         if ($code === '' || !preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $code)) return false;
         if (!isset($this->getBankExtraFields()[$code])) return false;
-        if ($code === trim((string) $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', '')) || $code === trim((string) $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''))) return false;
+        if ($code === trim((string) $this->getConst('FAH_EXTRAFIELD_GROSS_CODE', '')) || $code === trim((string) $this->getConst('FAH_EXTRAFIELD_FEE_CODE', ''))) return false;
 
         $table = MAIN_DB_PREFIX . 'bank_extrafields';
         $columns = $this->getTableColumns($table);
@@ -1802,13 +1776,13 @@ class CommerceAutomationHub
         $e = (int) $this->conf->entity;
         $oid = $this->db->escape((string) $orderId);
         // Log table first (SELECT * — dynamic columns handled via null coalescing)
-        $r = $this->db->query("SELECT * FROM " . MAIN_DB_PREFIX . "woobanksync_log WHERE entity=$e" . $this->logConnectorCondition('woocommerce') . " AND woo_order_id='$oid' AND sync_status='synced' LIMIT 1");
+        $r = $this->db->query("SELECT * FROM " . MAIN_DB_PREFIX . "fah_sync_log WHERE entity=$e" . $this->logConnectorCondition('woocommerce') . " AND woo_order_id='$oid' AND sync_status='synced' LIMIT 1");
         if ($r && ($obj = $this->db->fetch_object($r))) {
             $path = (string) ($obj->pdf_ecm_filepath ?? '');
             if ($path !== '') return $path;
         }
         // Cache table fallback
-        $r = $this->db->query("SELECT pdf_ecm_filepath FROM " . MAIN_DB_PREFIX . "woobanksync_order_cache WHERE entity=$e AND woo_order_id='$oid' LIMIT 1");
+        $r = $this->db->query("SELECT pdf_ecm_filepath FROM " . MAIN_DB_PREFIX . "fah_order_cache WHERE entity=$e AND woo_order_id='$oid' LIMIT 1");
         if ($r && ($obj = $this->db->fetch_object($r))) {
             return (string) ($obj->pdf_ecm_filepath ?? '');
         }
@@ -1821,8 +1795,8 @@ class CommerceAutomationHub
         $oid = $this->db->escape((string) $orderId);
         $entity = (int) $this->conf->entity;
         $now = $this->sqlDateNow();
-        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_order_cache SET pdf_ecm_filepath='" . $escaped . "', date_updated=" . $now . " WHERE entity=" . $entity . " AND woo_order_id='" . $oid . "'");
-        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "woobanksync_log SET pdf_ecm_filepath='" . $escaped . "' WHERE entity=" . $entity . $this->logConnectorCondition('woocommerce') . " AND woo_order_id='" . $oid . "' AND sync_status='synced'");
+        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "fah_order_cache SET pdf_ecm_filepath='" . $escaped . "', date_updated=" . $now . " WHERE entity=" . $entity . " AND woo_order_id='" . $oid . "'");
+        $this->db->query("UPDATE " . MAIN_DB_PREFIX . "fah_sync_log SET pdf_ecm_filepath='" . $escaped . "' WHERE entity=" . $entity . $this->logConnectorCondition('woocommerce') . " AND woo_order_id='" . $oid . "' AND sync_status='synced'");
     }
 
     public function isInvoicePdfStored($ecmFilepath)
@@ -1848,7 +1822,7 @@ class CommerceAutomationHub
     public function getCachedOrderJsonRows()
     {
         $rows = array();
-        $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        $table = MAIN_DB_PREFIX . 'fah_order_cache';
         if (!in_array('raw_order_json', $this->getTableColumns($table), true)) return $rows;
 
         $sql = 'SELECT woo_order_id, woo_order_number, woo_invoice_number, date_updated'
@@ -1872,7 +1846,7 @@ class CommerceAutomationHub
 
     public function getCachedOrderJson($orderId)
     {
-        $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        $table = MAIN_DB_PREFIX . 'fah_order_cache';
         if (!in_array('raw_order_json', $this->getTableColumns($table), true)) return null;
 
         $sql = 'SELECT raw_order_json FROM ' . $table
@@ -1887,7 +1861,7 @@ class CommerceAutomationHub
     public function getFullCacheRefreshOrders($limit = 0)
     {
         $rows = array();
-        $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        $sql = 'SELECT woo_order_id, woo_order_number FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
             . $this->logConnectorCondition('woocommerce')
             . " AND sync_status='synced' ORDER BY rowid DESC";
@@ -1906,7 +1880,7 @@ class CommerceAutomationHub
     public function refreshFullCacheBatch(array $orderIds, $storeJson = false)
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
-        $batchSize = max(1, min(100, (int) $this->getConst('WBS_CACHE_BATCH_SIZE', '1')));
+        $batchSize = max(1, min(100, (int) $this->getConst('FAH_CACHE_BATCH_SIZE', '1')));
         $ids = array_slice($ids, 0, $batchSize);
         if (empty($ids)) return array('updated' => 0, 'errors' => 0, 'items' => array());
 
@@ -1964,7 +1938,7 @@ class CommerceAutomationHub
     {
         $state = array();
         $sql = 'SELECT woo_order_number, woo_invoice_number, woo_invoice_pdf_url, pdf_ecm_filepath'
-            . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
+            . ' FROM ' . MAIN_DB_PREFIX . 'fah_order_cache'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND woo_order_id='" . $this->db->escape((string) $orderId) . "' LIMIT 1";
         $resql = $this->db->query($sql);
@@ -1981,7 +1955,7 @@ class CommerceAutomationHub
 
     private function upsertOrderCache($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $ecmFilepath, $order = null)
     {
-        $table = MAIN_DB_PREFIX . 'woobanksync_order_cache';
+        $table = MAIN_DB_PREFIX . 'fah_order_cache';
         $columns = $this->getTableColumns($table);
         if (empty($columns)) return;
         $e = (int) $this->conf->entity;
@@ -2147,10 +2121,10 @@ class CommerceAutomationHub
 
     private function insertLog($order, $bankId, $gross, $fee, $bankLineGross, $bankLineFee, $status, $message, $dateOrder, $invoiceNumber = '', $payoutAmount = 0, $pdfUrl = '', $pdfEcmFilepath = '', $wooPayoutRaw = 0.0)
     {
-        $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log');
+        $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'fah_sync_log');
         $data = array(
             'entity' => (int) $this->conf->entity,
-            'connector' => "'" . $this->db->escape((string) ($order['_dch_connector'] ?? 'woocommerce')) . "'",
+            'connector' => "'" . $this->db->escape((string) ($order['_fah_connector'] ?? 'woocommerce')) . "'",
             'woo_order_id' => "'" . $this->db->escape((string) ($order['id'] ?? '')) . "'",
             'woo_order_number' => "'" . $this->db->escape((string) ($order['number'] ?? ($order['id'] ?? ''))) . "'",
             'woo_transaction_id' => "'" . $this->db->escape((string) ($order['transaction_id'] ?? '')) . "'",
@@ -2158,7 +2132,7 @@ class CommerceAutomationHub
             'dolibarr_bank_account_id' => (int) $bankId,
             'gross_amount' => price2num($gross, 'MT'),
             'fee_amount' => price2num($fee, 'MT'),
-            'fee_source' => "'" . $this->db->escape((string) ($order['_dch_fee_source'] ?? (($order['_dch_connector'] ?? 'woocommerce') === 'woocommerce' ? 'WooCommerce order metadata' : ucfirst((string) ($order['_dch_connector'] ?? '')) . ' API'))) . "'",
+            'fee_source' => "'" . $this->db->escape((string) ($order['_fah_fee_source'] ?? (($order['_fah_connector'] ?? 'woocommerce') === 'woocommerce' ? 'WooCommerce order metadata' : ucfirst((string) ($order['_fah_connector'] ?? '')) . ' API'))) . "'",
             'payout_amount' => price2num($payoutAmount, 'MT'),
             'woo_payout_raw' => $wooPayoutRaw > 0 ? price2num($wooPayoutRaw, 'MT') : 'NULL',
             'currency' => "'" . $this->db->escape((string) ($order['currency'] ?? 'EUR')) . "'",
@@ -2173,7 +2147,7 @@ class CommerceAutomationHub
             'pdf_ecm_filepath' => "'" . $this->db->escape((string) $pdfEcmFilepath) . "'",
         );
         foreach (array_keys($data) as $key) if (!in_array($key, $fields, true)) unset($data[$key]);
-        $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'woobanksync_log (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'fah_sync_log (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
         $updates = array();
         foreach (array_keys($data) as $key) {
             if (in_array($key, array('entity', 'connector', 'woo_order_id'), true)) continue;
@@ -2185,8 +2159,8 @@ class CommerceAutomationHub
 
     private function isOrderSynced($orderId, $connector = 'woocommerce')
     {
-        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity
-            . (in_array('connector', $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log'), true)
+        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'fah_sync_log WHERE entity=' . (int) $this->conf->entity
+            . (in_array('connector', $this->getTableColumns(MAIN_DB_PREFIX . 'fah_sync_log'), true)
                 ? " AND connector='" . $this->db->escape((string) $connector) . "'" : '')
             . " AND woo_order_id='" . $this->db->escape((string) $orderId) . "' AND sync_status IN ('synced','dryrun')";
         $res = $this->db->query($sql);
@@ -2195,7 +2169,7 @@ class CommerceAutomationHub
 
     private function logConnectorCondition($connector)
     {
-        if (!in_array('connector', $this->getTableColumns(MAIN_DB_PREFIX . 'woobanksync_log'), true)) return '';
+        if (!in_array('connector', $this->getTableColumns(MAIN_DB_PREFIX . 'fah_sync_log'), true)) return '';
         return " AND connector='" . $this->db->escape((string) $connector) . "'";
     }
 
@@ -2261,7 +2235,7 @@ class CommerceAutomationHub
     /**
      * Read a module constant.
      *
-     * Public because integration hooks receive the Commerce Automation Hub instance and
+     * Public because integration hooks receive the Finance Automation Hub instance and
      * use it to read shared WooCommerce/PDF configuration.
      */
     public function getConst($name, $default = '')
@@ -2282,9 +2256,4 @@ class CommerceAutomationHub
         $items = array_map('trim', explode(',', (string) $csv));
         return array_values(array_filter($items, static function ($item) { return $item !== ''; }));
     }
-}
-
-/** Backward-compatible technical class name for existing integrations/cron data. */
-class WooBankSync extends CommerceAutomationHub
-{
 }

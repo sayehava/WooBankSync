@@ -2,26 +2,26 @@
 
 if (!defined('MAIN_DB_PREFIX')) die('Access denied');
 
-require_once __DIR__ . '/../class/wbsgermanizedclient.class.php';
+require_once __DIR__ . '/../class/fahgermanizedclient.class.php';
 
 /**
- * Commerce Automation Hub integration for WooCommerce Germanized / Germanized Pro.
+ * Finance Automation Hub integration for WooCommerce Germanized / Germanized Pro.
  *
  * Provides:
  *  - Invoice number extraction from order meta and Germanized document endpoints.
  *  - PDF download via StoreaBill API (/wp-json/sab/v1/) with URL fallback.
  *  - ECM folder and file management for saved PDFs.
- *  - Settings UI section in Commerce Automation Hub setup.
+ *  - Settings UI section in Finance Automation Hub setup.
  *
  * This integration is completely optional. If Germanized is not installed on
  * the WooCommerce site, isDetected() returns false and nothing here runs.
  */
-class WbsGermanizedIntegration implements WbsIntegrationInterface
+class FahGermanizedIntegration implements FahIntegrationInterface
 {
     private $db;
     private $conf;
 
-    /** Shared with CommerceAutomationHub::$pdfLog; populated during PDF fetch. */
+    /** Shared with FinanceAutomationHub::$pdfLog; populated during PDF fetch. */
     public $pdfLog = array();
     /** Set during StoreaBill fetch when the SAB response includes an invoice number. */
     public $lastSabInvoiceNumber = '';
@@ -40,7 +40,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     public function isDetected()
     {
         // 1. User explicitly enabled Germanized in a previous session.
-        if (!empty($this->conf->global->WBS_GERMANIZED_PRO_ENABLED)) return true;
+        if (!empty($this->conf->global->FAH_GERMANIZED_PRO_ENABLED)) return true;
         // 2. Scan existing data for Germanized signatures without extra API calls.
         return $this->scanForGzdSignatures();
     }
@@ -48,14 +48,14 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     private function scanForGzdSignatures()
     {
         // Any synced order that has an invoice number = Germanized was used before.
-        $r = $this->db->query('SELECT rowid FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        $r = $this->db->query('SELECT rowid FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND connector='woocommerce'"
             . " AND woo_invoice_number IS NOT NULL AND woo_invoice_number != '' LIMIT 1");
         if ($r && $this->db->fetch_object($r)) return true;
 
         // Order cache JSON containing _wc_gzd meta keys.
-        $r2 = $this->db->query('SELECT raw_order_json FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache'
+        $r2 = $this->db->query('SELECT raw_order_json FROM ' . MAIN_DB_PREFIX . 'fah_order_cache'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND raw_order_json IS NOT NULL AND raw_order_json != '' LIMIT 20");
         if ($r2) {
@@ -71,7 +71,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 
     public function extractInvoiceNumber(array $order)
     {
-        if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
+        if ((int) $this->getConst('FAH_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
 
         // StoreaBill / Germanized Pro embeds invoice data directly in the order
         // REST response under $order['invoices'] — not in meta_data.
@@ -82,7 +82,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
             }
         }
 
-        $configuredKeys = $this->getJsonConst('WBS_WOO_INVOICE_KEYS_JSON', array());
+        $configuredKeys = $this->getJsonConst('FAH_WOO_INVOICE_KEYS_JSON', array());
         $defaultKeys = array(
             '_wc_gzd_invoice_number', '_wc_gzd_order_invoice_number',
             '_wc_gzd_document_invoice_number', '_wc_gzd_document_number',
@@ -171,7 +171,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 
     public function extractPdfUrl(array $order)
     {
-        if ((int) $this->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
+        if ((int) $this->getConst('FAH_GERMANIZED_PRO_ENABLED', '0') !== 1) return '';
         return $this->extractPdfUrlFromOrder($order);
     }
 
@@ -204,7 +204,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         foreach (array('/wp-content/', '/wp-includes/') as $marker) {
             $pos = strpos((string) $path, $marker);
             if ($pos !== false) {
-                $wooUrl = rtrim((string) $this->getConst('WBS_WOO_URL', ''), '/');
+                $wooUrl = rtrim((string) $this->getConst('FAH_WOO_URL', ''), '/');
                 if ($wooUrl !== '') return $wooUrl . substr($path, $pos);
             }
         }
@@ -213,22 +213,22 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 
     private function gzdPdfUrl($orderId, $order = null)
     {
-        $url    = (string) $this->getConst('WBS_WOO_URL', '');
-        $key    = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
-        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        $url    = (string) $this->getConst('FAH_WOO_URL', '');
+        $key    = (string) $this->getConst('FAH_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('FAH_WOO_CONSUMER_SECRET', '');
         if ($url === '' || $key === '' || $secret === '') return '';
-        $gzd = new WbsGermanizedClient($url, $key, $secret);
+        $gzd = new FahGermanizedClient($url, $key, $secret);
         return $gzd->getInvoicePdfUrl($orderId, $order);
     }
 
     /** Probe Germanized endpoints for diagnostic — called from setup.php. */
     public function probeGzd($orderId)
     {
-        $url    = (string) $this->getConst('WBS_WOO_URL', '');
-        $key    = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
-        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        $url    = (string) $this->getConst('FAH_WOO_URL', '');
+        $key    = (string) $this->getConst('FAH_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('FAH_WOO_CONSUMER_SECRET', '');
         if ($url === '' || $key === '' || $secret === '') return null;
-        $gzd = new WbsGermanizedClient($url, $key, $secret);
+        $gzd = new FahGermanizedClient($url, $key, $secret);
         return $gzd->probeOrder((int) $orderId);
     }
 
@@ -236,7 +236,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 
     public function tryDownloadPdf($orderId, $orderNumber, $invoiceNumber, $pdfUrl, $sync, $force = false)
     {
-        if ((int) $sync->getConst('WBS_PDF_DOWNLOAD_ENABLED', '0') !== 1) {
+        if ((int) $sync->getConst('FAH_PDF_DOWNLOAD_ENABLED', '0') !== 1) {
             return array('ok' => false, 'already' => false, 'filepath' => '', 'log' => array());
         }
         if (!$force) {
@@ -271,7 +271,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     {
         $rows = array();
         $e    = (int) $this->conf->entity;
-        $sql  = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        $sql  = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
             . " WHERE entity=$e AND connector='woocommerce' AND sync_status='synced' ORDER BY rowid DESC";
         $resql = $this->db->query($sql);
         if (!$resql) return $rows;
@@ -295,17 +295,17 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     public function enrichCacheOrder(array $order, $sync)
     {
         $result = array('invoice_number' => '', 'pdf_url' => '');
-        if ((int) $sync->getConst('WBS_GERMANIZED_PRO_ENABLED', '0') !== 1) return $result;
+        if ((int) $sync->getConst('FAH_GERMANIZED_PRO_ENABLED', '0') !== 1) return $result;
 
         $invoiceNumber = $this->extractInvoiceNumber($order);
         $pdfUrl        = $this->extractPdfUrl($order);
 
         if ($invoiceNumber === '' && !empty($order['id'])) {
-            $url    = (string) $sync->getConst('WBS_WOO_URL', '');
-            $key    = (string) $sync->getConst('WBS_WOO_CONSUMER_KEY', '');
-            $secret = (string) $sync->getConst('WBS_WOO_CONSUMER_SECRET', '');
+            $url    = (string) $sync->getConst('FAH_WOO_URL', '');
+            $key    = (string) $sync->getConst('FAH_WOO_CONSUMER_KEY', '');
+            $secret = (string) $sync->getConst('FAH_WOO_CONSUMER_SECRET', '');
             if ($url !== '' && $key !== '' && $secret !== '') {
-                $gzd     = new WbsGermanizedClient($url, $key, $secret);
+                $gzd     = new FahGermanizedClient($url, $key, $secret);
                 $gzdData = $gzd->getOrderDocumentData((int) $order['id']);
                 if (!empty($gzdData['invoice_number'])) $invoiceNumber = (string) $gzdData['invoice_number'];
                 if (!empty($gzdData['invoice_pdf_url'])) $pdfUrl = (string) $gzdData['invoice_pdf_url'];
@@ -322,7 +322,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     public function createDocumentFolder($sync)
     {
         $folderId = (int) $this->findOrCreateEcmFolder('Woo Invoices');
-        if ($folderId > 0) $sync->setConst('WBS_DOCUMENT_FOLDER_ID', (string) $folderId, 'chaine');
+        if ($folderId > 0) $sync->setConst('FAH_DOCUMENT_FOLDER_ID', (string) $folderId, 'chaine');
         return array($folderId > 0,
             $folderId > 0 ? 'Woo Invoices ECM folder is ready.' : 'Could not create/find ECM folder. Is Documents/ECM module enabled?');
     }
@@ -334,7 +334,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $pattern = '#/wp-content/uploads/(storeabill-[a-z0-9]+)/#i';
 
         // Step 1: parse PDF URLs already stored in the local cache (zero extra HTTP calls)
-        foreach (array(MAIN_DB_PREFIX . 'woobanksync_order_cache', MAIN_DB_PREFIX . 'woobanksync_log') as $table) {
+        foreach (array(MAIN_DB_PREFIX . 'fah_order_cache', MAIN_DB_PREFIX . 'fah_sync_log') as $table) {
             $sql = 'SELECT woo_invoice_pdf_url FROM ' . $table
                 . ' WHERE entity=' . (int) $this->conf->entity
                 . " AND woo_invoice_pdf_url IS NOT NULL AND woo_invoice_pdf_url != '' LIMIT 50";
@@ -343,14 +343,14 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
             while ($obj = $this->db->fetch_object($res)) {
                 $url = (string) ($obj->woo_invoice_pdf_url ?? '');
                 if (preg_match($pattern, $url, $m)) {
-                    $sync->setConst('WBS_STOREABILL_FOLDER', $m[1], 'chaine');
+                    $sync->setConst('FAH_STOREABILL_FOLDER', $m[1], 'chaine');
                     return array(true, 'Detected from local cache: ' . $m[1]);
                 }
             }
         }
 
         // Step 2: scan ECM filepath column
-        $sql = 'SELECT pdf_ecm_filepath FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        $sql = 'SELECT pdf_ecm_filepath FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
             . ' WHERE entity=' . (int) $this->conf->entity
             . " AND connector='woocommerce'"
             . " AND pdf_ecm_filepath IS NOT NULL AND pdf_ecm_filepath != '' LIMIT 20";
@@ -361,24 +361,24 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
                 $decoded = @json_decode($path, true);
                 $found = '';
                 if ($this->findPatternInData($decoded ?: $path, $pattern, $found)) {
-                    $sync->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                    $sync->setConst('FAH_STOREABILL_FOLDER', $found, 'chaine');
                     return array(true, 'Detected from ECM filepath: ' . $found);
                 }
             }
         }
 
         // Step 3: probe live WooCommerce API
-        $url    = (string) $sync->getConst('WBS_WOO_URL', '');
-        $key    = (string) $sync->getConst('WBS_WOO_CONSUMER_KEY', '');
-        $secret = (string) $sync->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        $url    = (string) $sync->getConst('FAH_WOO_URL', '');
+        $key    = (string) $sync->getConst('FAH_WOO_CONSUMER_KEY', '');
+        $secret = (string) $sync->getConst('FAH_WOO_CONSUMER_SECRET', '');
         if ($url === '' || $key === '' || $secret === '') {
             return array(false, 'No StoreaBill URL found in local data and WooCommerce is not connected.');
         }
 
-        require_once __DIR__ . '/../class/woocommerceclient.class.php';
+        require_once __DIR__ . '/../class/fahwoocommerceclient.class.php';
         $client   = new WooCommerceClient($url, $key, $secret);
         $syncedIds = array();
-        $rIds = $this->db->query('SELECT DISTINCT woo_order_id FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+        $rIds = $this->db->query('SELECT DISTINCT woo_order_id FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
             . ' WHERE entity=' . (int) $this->conf->entity . " AND connector='woocommerce' AND sync_status='synced' ORDER BY rowid DESC LIMIT 5");
         if ($rIds) while ($obj = $this->db->fetch_object($rIds)) $syncedIds[] = (string) $obj->woo_order_id;
 
@@ -387,14 +387,14 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
             return array(false, 'No StoreaBill URLs in local data and WooCommerce connection failed: ' . $client->error);
         }
 
-        $gzd        = new WbsGermanizedClient($url, $key, $secret);
+        $gzd        = new FahGermanizedClient($url, $key, $secret);
         $scanPattern = '#/uploads/(storeabill-[a-z0-9]+)/#i';
 
         foreach ($ordersToProbe as $recent) {
             if (!is_array($recent)) continue;
             $found = '';
             if ($this->findPatternInData($recent, $scanPattern, $found)) {
-                $sync->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                $sync->setConst('FAH_STOREABILL_FOLDER', $found, 'chaine');
                 return array(true, 'Detected from order list (order #' . ($recent['number'] ?? $recent['id'] ?? '?') . '): ' . $found);
             }
         }
@@ -407,13 +407,13 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 
             $fullOrder = $gzd->getFullOrder($orderId);
             if ($fullOrder !== false && $this->findPatternInData($fullOrder, $scanPattern, $found)) {
-                $sync->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                $sync->setConst('FAH_STOREABILL_FOLDER', $found, 'chaine');
                 return array(true, 'Detected from single-order endpoint (order #' . $orderNum . '): ' . $found);
             }
 
             $docs = $gzd->getOrderDocuments($orderId);
             if ($docs !== false && $this->findPatternInData($docs, $scanPattern, $found)) {
-                $sync->setConst('WBS_STOREABILL_FOLDER', $found, 'chaine');
+                $sync->setConst('FAH_STOREABILL_FOLDER', $found, 'chaine');
                 return array(true, 'Detected from Germanized document endpoint (order #' . $orderNum . '): ' . $found);
             }
         }
@@ -455,11 +455,11 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $this->pdfLog[] = '[DL] Got ' . strlen($content) . ' bytes — proceeding to save';
 
         // Resolve ECM folder
-        $folderId = (int) $this->getConst('WBS_DOCUMENT_FOLDER_ID', '0');
+        $folderId = (int) $this->getConst('FAH_DOCUMENT_FOLDER_ID', '0');
         if ($folderId <= 0) {
             $folderId = (int) $this->findOrCreateEcmFolder('Woo Invoices');
             if ($folderId > 0) {
-                $sync->setConst('WBS_DOCUMENT_FOLDER_ID', (string) $folderId, 'chaine');
+                $sync->setConst('FAH_DOCUMENT_FOLDER_ID', (string) $folderId, 'chaine');
             } else {
                 $this->pdfLog[] = '[STORE] ECM folder "Woo Invoices" not found — go to Setup and click "Create/repair Woo Invoices folder"';
                 return '';
@@ -510,12 +510,12 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 
     private function fetchStoreaBillPdf($orderId)
     {
-        $wooUrl = rtrim((string) $this->getConst('WBS_WOO_URL', ''), '/');
-        $key    = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
-        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        $wooUrl = rtrim((string) $this->getConst('FAH_WOO_URL', ''), '/');
+        $key    = (string) $this->getConst('FAH_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('FAH_WOO_CONSUMER_SECRET', '');
         if ($wooUrl === '' || $key === '' || $secret === '') return false;
 
-        $gzd = new WbsGermanizedClient($wooUrl, $key, $secret);
+        $gzd = new FahGermanizedClient($wooUrl, $key, $secret);
         $this->pdfLog[] = '[SAB-1] Calling /wp-json/sab/v1/invoices/?reference_id=' . (int) $orderId;
         $invoices = $gzd->getStoreaBillInvoices((int) $orderId);
         if ($invoices === false) {
@@ -606,8 +606,8 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
                 return false;
             }
         }
-        $key    = (string) $this->getConst('WBS_WOO_CONSUMER_KEY', '');
-        $secret = (string) $this->getConst('WBS_WOO_CONSUMER_SECRET', '');
+        $key    = (string) $this->getConst('FAH_WOO_CONSUMER_KEY', '');
+        $secret = (string) $this->getConst('FAH_WOO_CONSUMER_SECRET', '');
 
         $urlPath = (string) @parse_url($url, PHP_URL_PATH);
         if ($urlPath !== '' && strtolower(substr($urlPath, -4)) === '.pdf' && strpos($url, '?') !== false) {
@@ -717,7 +717,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         if (empty($fields)) return false;
         $folderPath = ltrim(dirname($relPath), '/\\');
         $label      = substr(pathinfo($filename, PATHINFO_FILENAME), 0, 128);
-        $userId     = !empty($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : max(1, (int) $this->getConst('DCH_STOCK_USER_ID', '1'));
+        $userId     = !empty($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : max(1, (int) $this->getConst('FAH_STOCK_USER_ID', '1'));
         $data       = array();
         $this->addDataIfColumn($data, $fields, 'ref', "'" . $this->db->escape(sha1($folderPath . '/' . $filename)) . "'", false);
         $this->addDataIfColumn($data, $fields, 'label', "'" . $this->db->escape($label) . "'", false);
@@ -729,9 +729,9 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $this->addDataIfColumn($data, $fields, 'fk_user_c', $userId, true);
         $this->addDataIfColumn($data, $fields, 'date_c', $this->sqlDateNow(), false);
         $this->addDataIfColumn($data, $fields, 'description', "'" . $this->db->escape('WooCommerce order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
-        $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('commerceautomationhub woo ' . $orderId) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('financeautomationhub woo ' . $orderId) . "'", false);
         $this->addDataIfColumn($data, $fields, 'gen_or_uploaded', "'generated'", false);
-        $this->addDataIfColumn($data, $fields, 'src_object_type', "'commerceautomationhub'", false);
+        $this->addDataIfColumn($data, $fields, 'src_object_type', "'financeautomationhub'", false);
         $this->addDataIfColumn($data, $fields, 'src_object_id', (int) $orderId, true);
         $this->addDataIfColumn($data, $fields, 'position', 0, true);
         if (empty($data)) return false;
@@ -750,24 +750,24 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     public function handleAction($action, $conf, $db, $langs, $sync)
     {
         if ($action === 'save_invoice') {
-            $gzdEnabled  = GETPOST('WBS_GERMANIZED_PRO_ENABLED', 'int') ? '1' : '0';
-            $extraEnabled = $gzdEnabled === '1' && GETPOST('WBS_BANK_EXTRAFIELD_ENABLED', 'int');
+            $gzdEnabled  = GETPOST('FAH_GERMANIZED_PRO_ENABLED', 'int') ? '1' : '0';
+            $extraEnabled = $gzdEnabled === '1' && GETPOST('FAH_BANK_EXTRAFIELD_ENABLED', 'int');
             list($mappingOk, $mappingMessage) = $sync->saveInvoiceExtraFieldMapping(
-                $extraEnabled, GETPOST('WBS_BANK_EXTRAFIELD_CODE', 'aZ09'), GETPOST('WBS_BANK_EXTRAFIELD_LABEL', 'restricthtml')
+                $extraEnabled, GETPOST('FAH_BANK_EXTRAFIELD_CODE', 'aZ09'), GETPOST('FAH_BANK_EXTRAFIELD_LABEL', 'restricthtml')
             );
             if (!$mappingOk) {
                 setEventMessages($mappingMessage, null, 'errors');
                 return true;
             }
-            $sync->setConst('WBS_GERMANIZED_PRO_ENABLED', $gzdEnabled, 'yesno');
-            $sync->setConst('WBS_DOCUMENT_SYNC_ENABLED',  ($gzdEnabled === '1' && GETPOST('WBS_DOCUMENT_SYNC_ENABLED', 'int')) ? '1' : '0', 'yesno');
-            $sync->setConst('WBS_DOCUMENT_FOLDER_ID',     GETPOST('WBS_DOCUMENT_FOLDER_ID', 'int'), 'chaine');
-            $sync->setConst('WBS_PDF_DOWNLOAD_ENABLED',   ($gzdEnabled === '1' && GETPOST('WBS_PDF_DOWNLOAD_ENABLED', 'int')) ? '1' : '0', 'yesno');
+            $sync->setConst('FAH_GERMANIZED_PRO_ENABLED', $gzdEnabled, 'yesno');
+            $sync->setConst('FAH_DOCUMENT_SYNC_ENABLED',  ($gzdEnabled === '1' && GETPOST('FAH_DOCUMENT_SYNC_ENABLED', 'int')) ? '1' : '0', 'yesno');
+            $sync->setConst('FAH_DOCUMENT_FOLDER_ID',     GETPOST('FAH_DOCUMENT_FOLDER_ID', 'int'), 'chaine');
+            $sync->setConst('FAH_PDF_DOWNLOAD_ENABLED',   ($gzdEnabled === '1' && GETPOST('FAH_PDF_DOWNLOAD_ENABLED', 'int')) ? '1' : '0', 'yesno');
             setEventMessages('Germanized settings saved.', null, 'mesgs');
             return true;
         }
         if ($action === 'create_invoice_extrafield') {
-            list($ok, $msg) = $sync->createAndMapInvoiceBankExtraField(GETPOST('WBS_BANK_EXTRAFIELD_LABEL', 'restricthtml'));
+            list($ok, $msg) = $sync->createAndMapInvoiceBankExtraField(GETPOST('FAH_BANK_EXTRAFIELD_LABEL', 'restricthtml'));
             setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
             return true;
         }
@@ -782,11 +782,11 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
             return true;
         }
         if ($action === 'save_storeabill') {
-            $folder = trim(GETPOST('WBS_STOREABILL_FOLDER', 'restricthtml'));
+            $folder = trim(GETPOST('FAH_STOREABILL_FOLDER', 'restricthtml'));
             if ($folder !== '' && !preg_match('/^storeabill-[a-z0-9]+$/i', $folder)) {
                 setEventMessages('Invalid folder name. Expected: storeabill-xxxxxxxx', null, 'errors');
             } else {
-                $sync->setConst('WBS_STOREABILL_FOLDER', $folder, 'chaine');
+                $sync->setConst('FAH_STOREABILL_FOLDER', $folder, 'chaine');
                 setEventMessages($folder !== '' ? 'StoreaBill folder saved: ' . $folder : 'StoreaBill folder cleared.', null, 'mesgs');
             }
             return true;
@@ -827,7 +827,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         }
         if ($action === 'setup_pdf_status') {
             if (!$GLOBALS['user']->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit; }
-            $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+            $sql = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'fah_sync_log'
                 . ' WHERE entity=' . (int) $conf->entity . " AND connector='woocommerce' AND sync_status='synced' ORDER BY rowid DESC LIMIT 500";
             $rows  = array();
             $resql = $db->query($sql);
@@ -849,13 +849,13 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 
     public function renderSetupHtml($conf, $db, $langs, $token, $sync = null)
     {
-        $gzdEnabled           = !empty($conf->global->WBS_GERMANIZED_PRO_ENABLED);
-        $labelEnabled         = !empty($conf->global->WBS_DOCUMENT_SYNC_ENABLED);
-        $extraEnabled         = !empty($conf->global->WBS_BANK_EXTRAFIELD_ENABLED);
-        $pdfDownloadEnabled   = !empty($conf->global->WBS_PDF_DOWNLOAD_ENABLED);
-        $mappedBankExtraField = (string) ($conf->global->WBS_BANK_EXTRAFIELD_CODE ?? '');
-        $mappedFolderId       = (string) ($conf->global->WBS_DOCUMENT_FOLDER_ID ?? '');
-        $storeabillFolder     = (string) ($conf->global->WBS_STOREABILL_FOLDER ?? '');
+        $gzdEnabled           = !empty($conf->global->FAH_GERMANIZED_PRO_ENABLED);
+        $labelEnabled         = !empty($conf->global->FAH_DOCUMENT_SYNC_ENABLED);
+        $extraEnabled         = !empty($conf->global->FAH_BANK_EXTRAFIELD_ENABLED);
+        $pdfDownloadEnabled   = !empty($conf->global->FAH_PDF_DOWNLOAD_ENABLED);
+        $mappedBankExtraField = (string) ($conf->global->FAH_BANK_EXTRAFIELD_CODE ?? '');
+        $mappedFolderId       = (string) ($conf->global->FAH_DOCUMENT_FOLDER_ID ?? '');
+        $storeabillFolder     = (string) ($conf->global->FAH_STOREABILL_FOLDER ?? '');
         $bankExtraFields      = $sync ? $sync->getBankExtraFields() : array();
         $bankExtraFieldLabel  = $bankExtraFields[$mappedBankExtraField] ?? 'WooCommerce invoice number';
         $self                 = $_SERVER['PHP_SELF'] . '?connector_view=woocommerce';
@@ -865,39 +865,39 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
 <table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">Germanized / Germanized Pro — invoice integration</td></tr>
 <tr><td class="titlefield">Enable Germanized integration</td><td>
-<label><input type="checkbox" id="wbsGzdToggle" name="WBS_GERMANIZED_PRO_ENABLED" value="1"<?php echo $gzdEnabled ? ' checked' : ''; ?>
- onchange="document.getElementById('wbsGzdSub').style.display=this.checked?'table-row-group':'none';document.getElementById('wbsGzdExtra').style.display=this.checked?'block':'none';">
+<label><input type="checkbox" id="fahGzdToggle" name="FAH_GERMANIZED_PRO_ENABLED" value="1"<?php echo $gzdEnabled ? ' checked' : ''; ?>
+ onchange="document.getElementById('fahGzdSub').style.display=this.checked?'table-row-group':'none';document.getElementById('fahGzdExtra').style.display=this.checked?'block':'none';">
 Enable Germanized Pro invoice extraction</label>
 <br><span class="opacitymedium">Reads invoice number from <code>invoices[0].formatted_number</code> in the WooCommerce order response (StoreaBill / Germanized Pro).</span>
 </td></tr>
 </table>
-<table class="noborder centpercent" id="wbsGzdSub" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
+<table class="noborder centpercent" id="fahGzdSub" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
 <tr><td class="titlefield">Add invoice number to label</td><td>
-<label><input type="checkbox" name="WBS_DOCUMENT_SYNC_ENABLED" value="1"<?php echo $labelEnabled ? ' checked' : ''; ?>>
+<label><input type="checkbox" name="FAH_DOCUMENT_SYNC_ENABLED" value="1"<?php echo $labelEnabled ? ' checked' : ''; ?>>
  Append invoice number to bank entry label (title)</label>
 </td></tr>
 <tr><td class="titlefield">Store in a custom field</td><td>
-<label><input type="checkbox" name="WBS_BANK_EXTRAFIELD_ENABLED" value="1"<?php echo $extraEnabled ? ' checked' : ''; ?>>
+<label><input type="checkbox" name="FAH_BANK_EXTRAFIELD_ENABLED" value="1"<?php echo $extraEnabled ? ' checked' : ''; ?>>
  Also write the invoice number into a mapped bank-entry custom field</label>
 </td></tr>
 <tr><td class="titlefield">Bank-entry custom field</td><td>
-<select class="flat minwidth300" name="WBS_BANK_EXTRAFIELD_CODE"><option value="">-- not mapped --</option>
+<select class="flat minwidth300" name="FAH_BANK_EXTRAFIELD_CODE"><option value="">-- not mapped --</option>
 <?php foreach ($bankExtraFields as $code => $fieldLabel): ?>
 <option value="<?php echo dol_escape_htmltag($code); ?>"<?php echo $code === $mappedBankExtraField ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($fieldLabel . ' (' . $code . ')'); ?></option>
 <?php endforeach; ?>
 </select>
 </td></tr>
 <tr><td class="titlefield">Invoice field label</td><td>
-<input class="flat minwidth300" type="text" name="WBS_BANK_EXTRAFIELD_LABEL" value="<?php echo dol_escape_htmltag($bankExtraFieldLabel); ?>" maxlength="255">
+<input class="flat minwidth300" type="text" name="FAH_BANK_EXTRAFIELD_LABEL" value="<?php echo dol_escape_htmltag($bankExtraFieldLabel); ?>" maxlength="255">
 <br><span class="opacitymedium">Saving renames the selected custom field's display label.</span>
 </td></tr>
 <tr><td class="titlefield">Download PDF invoices during sync</td><td>
-<label><input type="checkbox" name="WBS_PDF_DOWNLOAD_ENABLED" value="1"<?php echo $pdfDownloadEnabled ? ' checked' : ''; ?>>
+<label><input type="checkbox" name="FAH_PDF_DOWNLOAD_ENABLED" value="1"<?php echo $pdfDownloadEnabled ? ' checked' : ''; ?>>
  Automatically download and save invoice PDFs during sync</label>
 <br><span class="opacitymedium">Requires a mapped ECM folder below. Each synced order triggers one extra HTTP request.</span>
 </td></tr>
 <tr><td class="titlefield">Invoice PDF document folder</td><td>
-<?php if (function_exists('wbs_ecm_folder_select')) { echo wbs_ecm_folder_select('WBS_DOCUMENT_FOLDER_ID', $mappedFolderId); } ?>
+<?php if (function_exists('fah_ecm_folder_select')) { echo fah_ecm_folder_select('FAH_DOCUMENT_FOLDER_ID', $mappedFolderId); } ?>
 <br><span class="opacitymedium">ECM folder where Woo invoice PDFs will be stored.</span>
 </td></tr>
 </table>
@@ -906,7 +906,7 @@ Enable Germanized Pro invoice extraction</label>
 <button class="button" type="submit" name="action" value="create_invoice_extrafield">Create and map invoice field automatically</button>
 </div>
 </form>
-<div id="wbsGzdExtra" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
+<div id="fahGzdExtra" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
 <form method="POST" action="<?php echo $self; ?>" class="center" style="margin-top:4px;">
 <input type="hidden" name="token" value="<?php echo $token; ?>"><input type="hidden" name="action" value="createdocs">
 <input class="button" type="submit" value="Create Woo Invoices ECM folder if missing and map it"<?php echo $mappedFolderId !== '' ? ' disabled' : ''; ?>>
@@ -931,7 +931,7 @@ Enable Germanized Pro invoice extraction</label>
 <form method="POST" action="<?php echo $self; ?>" style="display:inline-block;"
   onsubmit="return confirm('Changing this manually may break PDF downloads. Continue?');">
 <input type="hidden" name="token" value="<?php echo $token; ?>"><input type="hidden" name="action" value="save_storeabill">
-<input class="flat" type="text" name="WBS_STOREABILL_FOLDER" value="<?php echo dol_escape_htmltag($storeabillFolder); ?>" placeholder="storeabill-xxxxxxxx" style="width:220px;">
+<input class="flat" type="text" name="FAH_STOREABILL_FOLDER" value="<?php echo dol_escape_htmltag($storeabillFolder); ?>" placeholder="storeabill-xxxxxxxx" style="width:220px;">
  <input class="button" type="submit" value="Save">
 </form>
 <br><span style="color:#c05000;font-size:0.88em;">&#9888; Warning: manual changes may break PDF downloads.</span>
@@ -941,58 +941,58 @@ Enable Germanized Pro invoice extraction</label>
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">PDF invoices</td></tr>
 <tr><td class="titlefield">Download past PDFs</td><td>
-<button class="button" type="button" onclick="wbsGzdOpenPdfModal()">&#128196; Download invoice PDFs</button>
-<label title="Force re-download all even if already saved" style="cursor:pointer;font-size:0.9em;vertical-align:middle;margin-left:8px;"><input type="checkbox" id="wbsGzdForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
+<button class="button" type="button" onclick="fahGzdOpenPdfModal()">&#128196; Download invoice PDFs</button>
+<label title="Force re-download all even if already saved" style="cursor:pointer;font-size:0.9em;vertical-align:middle;margin-left:8px;"><input type="checkbox" id="fahGzdForceDownload" style="vertical-align:middle;margin-right:3px;">Force re-download all</label>
 &nbsp;
-<button class="button" type="button" onclick="wbsGzdOpenPdfStatusModal()" title="See which orders have PDFs saved, URL known, or missing">&#128202; PDF download status</button>
+<button class="button" type="button" onclick="fahGzdOpenPdfStatusModal()" title="See which orders have PDFs saved, URL known, or missing">&#128202; PDF download status</button>
 </td></tr>
 </table>
 
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">PDF download test</td></tr>
 <tr><td class="titlefield">Order ID or PDF URL</td><td>
-<input type="text" id="wbsGzdTestPdfInput" class="flat" placeholder="WooCommerce order ID (e.g. 30955)  OR  https://… direct PDF URL" style="width:500px;max-width:100%;">
-<br><button class="button" type="button" onclick="wbsGzdTestPdf()" style="margin-top:6px;">Test PDF download</button>
-<span id="wbsGzdTestPdfResult" style="margin-left:12px;font-size:.88em;"></span>
-<pre id="wbsGzdTestPdfLog" style="background:#f4f4f4;padding:8px;font-size:.8em;white-space:pre-wrap;margin-top:8px;display:none;max-height:200px;overflow-y:auto;"></pre>
+<input type="text" id="fahGzdTestPdfInput" class="flat" placeholder="WooCommerce order ID (e.g. 30955)  OR  https://… direct PDF URL" style="width:500px;max-width:100%;">
+<br><button class="button" type="button" onclick="fahGzdTestPdf()" style="margin-top:6px;">Test PDF download</button>
+<span id="fahGzdTestPdfResult" style="margin-left:12px;font-size:.88em;"></span>
+<pre id="fahGzdTestPdfLog" style="background:#f4f4f4;padding:8px;font-size:.8em;white-space:pre-wrap;margin-top:8px;display:none;max-height:200px;overflow-y:auto;"></pre>
 </td></tr>
 </table>
 
 <!-- PDF download modal -->
-<div id="wbsGzdPdfModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9998;align-items:center;justify-content:center;">
+<div id="fahGzdPdfModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.55);z-index:9998;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:82%;max-width:860px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.28);">
     <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;align-items:center;">
       <strong>&#128196; Download past invoice PDFs</strong>
-      <span onclick="wbsGzdEsc('wbsGzdPdfModal')" style="cursor:pointer;font-size:22px;color:#666;">&times;</span>
+      <span onclick="fahGzdEsc('fahGzdPdfModal')" style="cursor:pointer;font-size:22px;color:#666;">&times;</span>
     </div>
     <div style="padding:14px 20px 10px;">
-      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;"><div id="wbsGzdPdfBar" style="width:0%;height:10px;background:#28a745;border-radius:4px;transition:width .4s;"></div></div>
-      <div id="wbsGzdPdfStatus" style="margin-top:6px;font-size:.88em;color:#555;">Preparing&hellip;</div>
+      <div style="background:#e8e8e8;border-radius:4px;height:10px;overflow:hidden;"><div id="fahGzdPdfBar" style="width:0%;height:10px;background:#28a745;border-radius:4px;transition:width .4s;"></div></div>
+      <div id="fahGzdPdfStatus" style="margin-top:6px;font-size:.88em;color:#555;">Preparing&hellip;</div>
     </div>
-    <div id="wbsGzdPdfList" style="flex:1;overflow-y:auto;padding:4px 20px 10px;font-size:.9em;"></div>
+    <div id="fahGzdPdfList" style="flex:1;overflow-y:auto;padding:4px 20px 10px;font-size:.9em;"></div>
     <div style="padding:12px 20px;border-top:1px solid #ddd;display:flex;gap:10px;align-items:center;">
-      <button id="wbsGzdPdfDoneBtn" class="button" style="display:none;" onclick="wbsGzdEsc('wbsGzdPdfModal')">Close</button>
-      <span id="wbsGzdPdfSummary" style="font-size:.88em;color:#666;"></span>
+      <button id="fahGzdPdfDoneBtn" class="button" style="display:none;" onclick="fahGzdEsc('fahGzdPdfModal')">Close</button>
+      <span id="fahGzdPdfSummary" style="font-size:.88em;color:#666;"></span>
     </div>
   </div>
 </div>
 
 <!-- PDF status modal -->
-<div id="wbsGzdStatusModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
+<div id="fahGzdStatusModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:6px;width:95%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;">
     <div style="padding:14px 20px;border-bottom:1px solid #ddd;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <b style="flex:1;font-size:1.1em;">&#128202; PDF download status</b>
-      <input type="text" id="wbsGzdStatusSearch" placeholder="Search order #, invoice…" class="flat" style="width:240px;" oninput="wbsGzdFilterStatus()">
-      <label style="font-size:0.85em;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="wbsGzdStatusMissingOnly" onchange="wbsGzdFilterStatus()"> Missing only</label>
-      <span id="wbsGzdStatusCount" style="font-size:0.85em;color:#888;white-space:nowrap;"></span>
-      <button class="button" type="button" onclick="wbsGzdEsc('wbsGzdStatusModal')">Close</button>
+      <input type="text" id="fahGzdStatusSearch" placeholder="Search order #, invoice…" class="flat" style="width:240px;" oninput="fahGzdFilterStatus()">
+      <label style="font-size:0.85em;cursor:pointer;white-space:nowrap;"><input type="checkbox" id="fahGzdStatusMissingOnly" onchange="fahGzdFilterStatus()"> Missing only</label>
+      <span id="fahGzdStatusCount" style="font-size:0.85em;color:#888;white-space:nowrap;"></span>
+      <button class="button" type="button" onclick="fahGzdEsc('fahGzdStatusModal')">Close</button>
     </div>
     <div style="overflow:auto;flex:1;">
       <table class="liste centpercent" style="font-size:0.82em;">
         <thead><tr class="liste_titre">
           <th>Date sync</th><th>Order #</th><th>Invoice #</th><th>Payment</th><th style="text-align:center;">PDF status</th><th>ECM path / URL</th>
         </tr></thead>
-        <tbody id="wbsGzdStatusBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
+        <tbody id="fahGzdStatusBody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr></tbody>
       </table>
     </div>
     <div style="padding:10px 20px;border-top:1px solid #ddd;font-size:0.82em;color:#666;">
@@ -1002,68 +1002,68 @@ Enable Germanized Pro invoice extraction</label>
 </div>
 
 <script>
-var _wbsGzdStatusRows=[];
-function wbsGzdEsc(id){var el=document.getElementById(id);if(el){el.style.display='none';}}
-function wbsGzdOpenPdfModal(){
-  var force=document.getElementById('wbsGzdForceDownload')&&document.getElementById('wbsGzdForceDownload').checked?'1':'0';
-  document.getElementById('wbsGzdPdfModal').style.display='flex';
-  document.getElementById('wbsGzdPdfBar').style.width='0%';
-  document.getElementById('wbsGzdPdfDoneBtn').style.display='none';
-  document.getElementById('wbsGzdPdfSummary').textContent='';
-  document.getElementById('wbsGzdPdfList').innerHTML='';
-  document.getElementById('wbsGzdPdfStatus').textContent='Fetching pending orders…';
-  fetch(_wbsIndexAjaxUrl+'?action=pending_pdfs&force='+force+'&token='+encodeURIComponent(_wbsSetupToken))
+var _fahGzdStatusRows=[];
+function fahGzdEsc(id){var el=document.getElementById(id);if(el){el.style.display='none';}}
+function fahGzdOpenPdfModal(){
+  var force=document.getElementById('fahGzdForceDownload')&&document.getElementById('fahGzdForceDownload').checked?'1':'0';
+  document.getElementById('fahGzdPdfModal').style.display='flex';
+  document.getElementById('fahGzdPdfBar').style.width='0%';
+  document.getElementById('fahGzdPdfDoneBtn').style.display='none';
+  document.getElementById('fahGzdPdfSummary').textContent='';
+  document.getElementById('fahGzdPdfList').innerHTML='';
+  document.getElementById('fahGzdPdfStatus').textContent='Fetching pending orders…';
+  fetch(_fahIndexAjaxUrl+'?action=pending_pdfs&force='+force+'&token='+encodeURIComponent(_fahSetupToken))
     .then(function(r){return r.json();})
     .then(function(data){
       if(!data.orders||!data.orders.length){
-        document.getElementById('wbsGzdPdfStatus').textContent='No pending PDFs found.';
-        document.getElementById('wbsGzdPdfDoneBtn').style.display='';
+        document.getElementById('fahGzdPdfStatus').textContent='No pending PDFs found.';
+        document.getElementById('fahGzdPdfDoneBtn').style.display='';
         return;
       }
-      wbsGzdRunPdfQueue(data.orders,0,force,0,0);
-    }).catch(function(e){document.getElementById('wbsGzdPdfStatus').textContent='Error: '+e;});
+      fahGzdRunPdfQueue(data.orders,0,force,0,0);
+    }).catch(function(e){document.getElementById('fahGzdPdfStatus').textContent='Error: '+e;});
 }
-function wbsGzdRunPdfQueue(orders,idx,force,ok,fail){
+function fahGzdRunPdfQueue(orders,idx,force,ok,fail){
   if(idx>=orders.length){
-    document.getElementById('wbsGzdPdfBar').style.width='100%';
-    document.getElementById('wbsGzdPdfStatus').textContent='Done: '+ok+' downloaded, '+fail+' failed.';
-    document.getElementById('wbsGzdPdfSummary').textContent=ok+' PDFs saved, '+fail+' failed.';
-    document.getElementById('wbsGzdPdfDoneBtn').style.display='';
+    document.getElementById('fahGzdPdfBar').style.width='100%';
+    document.getElementById('fahGzdPdfStatus').textContent='Done: '+ok+' downloaded, '+fail+' failed.';
+    document.getElementById('fahGzdPdfSummary').textContent=ok+' PDFs saved, '+fail+' failed.';
+    document.getElementById('fahGzdPdfDoneBtn').style.display='';
     return;
   }
   var o=orders[idx];
-  document.getElementById('wbsGzdPdfBar').style.width=Math.round(idx/orders.length*100)+'%';
-  document.getElementById('wbsGzdPdfStatus').textContent='Downloading PDF for order #'+o.number+' ('+idx+'/'+orders.length+')…';
-  var body='action=download_pdf_single&woo_order_id='+encodeURIComponent(o.id)+'&force='+(force||'0')+'&token='+encodeURIComponent(_wbsSetupToken);
-  fetch(_wbsIndexAjaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+  document.getElementById('fahGzdPdfBar').style.width=Math.round(idx/orders.length*100)+'%';
+  document.getElementById('fahGzdPdfStatus').textContent='Downloading PDF for order #'+o.number+' ('+idx+'/'+orders.length+')…';
+  var body='action=download_pdf_single&woo_order_id='+encodeURIComponent(o.id)+'&force='+(force||'0')+'&token='+encodeURIComponent(_fahSetupToken);
+  fetch(_fahIndexAjaxUrl,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
     .then(function(r){return r.json();})
     .then(function(res){
       var li='<div style="padding:2px 0;font-size:.88em;">';
       li+=res.ok?'<span style="color:#090;">&#10003;</span>':'<span style="color:#c00;">&#10007;</span>';
       li+=' #'+o.number+(res.invoice?' / '+res.invoice:'')+(res.already?' (already saved)':'')+(res.ok&&!res.already?' &#10003; saved':'')+'</div>';
-      document.getElementById('wbsGzdPdfList').innerHTML+=li;
-      wbsGzdRunPdfQueue(orders,idx+1,force,ok+(res.ok?1:0),fail+(res.ok?0:1));
-    }).catch(function(){wbsGzdRunPdfQueue(orders,idx+1,force,ok,fail+1);});
+      document.getElementById('fahGzdPdfList').innerHTML+=li;
+      fahGzdRunPdfQueue(orders,idx+1,force,ok+(res.ok?1:0),fail+(res.ok?0:1));
+    }).catch(function(){fahGzdRunPdfQueue(orders,idx+1,force,ok,fail+1);});
 }
-function wbsGzdOpenPdfStatusModal(){
-  document.getElementById('wbsGzdStatusModal').style.display='flex';
-  document.getElementById('wbsGzdStatusBody').innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr>';
-  var fd=new FormData();fd.append('token',_wbsSetupToken);fd.append('action','setup_pdf_status');
+function fahGzdOpenPdfStatusModal(){
+  document.getElementById('fahGzdStatusModal').style.display='flex';
+  document.getElementById('fahGzdStatusBody').innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:#888;">Loading…</td></tr>';
+  var fd=new FormData();fd.append('token',_fahSetupToken);fd.append('action','setup_pdf_status');
   fetch(location.href,{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(data){
-    _wbsGzdStatusRows=data.rows||[];
-    wbsGzdFilterStatus();
+    _fahGzdStatusRows=data.rows||[];
+    fahGzdFilterStatus();
   });
 }
-function wbsGzdFilterStatus(){
-  var q=(document.getElementById('wbsGzdStatusSearch').value||'').toLowerCase().trim();
-  var missingOnly=document.getElementById('wbsGzdStatusMissingOnly').checked;
-  var rows=_wbsGzdStatusRows.filter(function(r){
+function fahGzdFilterStatus(){
+  var q=(document.getElementById('fahGzdStatusSearch').value||'').toLowerCase().trim();
+  var missingOnly=document.getElementById('fahGzdStatusMissingOnly').checked;
+  var rows=_fahGzdStatusRows.filter(function(r){
     if(missingOnly&&(r.pdf_ecm||r.pdf_url))return false;
     return !q||(r.number+r.invoice+r.payment).toLowerCase().indexOf(q)>=0;
   });
-  var saved=_wbsGzdStatusRows.filter(function(r){return!!r.pdf_ecm;}).length;
-  var urlOnly=_wbsGzdStatusRows.filter(function(r){return!r.pdf_ecm&&!!r.pdf_url;}).length;
-  document.getElementById('wbsGzdStatusCount').textContent=rows.length+' of '+_wbsGzdStatusRows.length+' — '+saved+' saved, '+urlOnly+' URL only';
+  var saved=_fahGzdStatusRows.filter(function(r){return!!r.pdf_ecm;}).length;
+  var urlOnly=_fahGzdStatusRows.filter(function(r){return!r.pdf_ecm&&!!r.pdf_url;}).length;
+  document.getElementById('fahGzdStatusCount').textContent=rows.length+' of '+_fahGzdStatusRows.length+' — '+saved+' saved, '+urlOnly+' URL only';
   var html='';
   rows.forEach(function(r,i){
     var icon,detail;
@@ -1074,28 +1074,28 @@ function wbsGzdFilterStatus(){
       +'<td style="white-space:nowrap;">'+(r.date||'').substring(0,16)+'</td><td>#'+r.number+'</td><td>'+r.invoice+'</td><td>'+r.payment+'</td>'
       +'<td style="text-align:center;">'+icon+'</td><td>'+detail+'</td></tr>';
   });
-  document.getElementById('wbsGzdStatusBody').innerHTML=html||'<tr><td colspan="6" style="text-align:center;color:#888;">No rows.</td></tr>';
+  document.getElementById('fahGzdStatusBody').innerHTML=html||'<tr><td colspan="6" style="text-align:center;color:#888;">No rows.</td></tr>';
 }
-function wbsGzdTestPdf(){
-  var val=document.getElementById('wbsGzdTestPdfInput').value.trim();
-  if(!val){document.getElementById('wbsGzdTestPdfLog').textContent='Enter an order ID or PDF URL first.';document.getElementById('wbsGzdTestPdfLog').style.display='block';return;}
-  document.getElementById('wbsGzdTestPdfResult').textContent='Testing…';
-  document.getElementById('wbsGzdTestPdfLog').style.display='none';
+function fahGzdTestPdf(){
+  var val=document.getElementById('fahGzdTestPdfInput').value.trim();
+  if(!val){document.getElementById('fahGzdTestPdfLog').textContent='Enter an order ID or PDF URL first.';document.getElementById('fahGzdTestPdfLog').style.display='block';return;}
+  document.getElementById('fahGzdTestPdfResult').textContent='Testing…';
+  document.getElementById('fahGzdTestPdfLog').style.display='none';
   var fd=new FormData();
-  fd.append('token',_wbsSetupToken);fd.append('action','setup_test_pdf');
+  fd.append('token',_fahSetupToken);fd.append('action','setup_test_pdf');
   if(/^\d+$/.test(val))fd.append('woo_order_id',val); else fd.append('pdf_url',val);
   fetch(location.href,{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){
-    document.getElementById('wbsGzdTestPdfResult').innerHTML=d.ok
+    document.getElementById('fahGzdTestPdfResult').innerHTML=d.ok
       ?'<span style="color:#090;">&#10003; PDF OK — '+d.bytes+' bytes</span>'+(d.invoice_number?' ('+d.invoice_number+')':'')
       :'<span style="color:#c00;">&#10007; Failed</span>';
-    if(d.log&&d.log.length){document.getElementById('wbsGzdTestPdfLog').textContent=d.log.join('\n');document.getElementById('wbsGzdTestPdfLog').style.display='block';}
-  }).catch(function(e){document.getElementById('wbsGzdTestPdfResult').textContent='Error: '+e;});
+    if(d.log&&d.log.length){document.getElementById('fahGzdTestPdfLog').textContent=d.log.join('\n');document.getElementById('fahGzdTestPdfLog').style.display='block';}
+  }).catch(function(e){document.getElementById('fahGzdTestPdfResult').textContent='Error: '+e;});
 }
 </script>
 <?php
         endif; // if ($gzdEnabled)
         ?>
-</div><?php // wbsGzdExtra
+</div><?php // fahGzdExtra
     }
 
     // Private utilities duplicated from the main service for self-containment.

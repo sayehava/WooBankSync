@@ -18,26 +18,26 @@ if (!$res) {
     exit(1);
 }
 
-require_once __DIR__ . '/../class/commerceautomationhub.class.php';
-$langs->loadLangs(array('commerceautomationhub@commerceautomationhub'));
+require_once __DIR__ . '/../class/financeautomationhub.class.php';
+$langs->loadLangs(array('financeautomationhub@financeautomationhub'));
 
-$sync = new CommerceAutomationHub($db, $conf, $langs);
+$sync = new FinanceAutomationHub($db, $conf, $langs);
 $totalErrors = 0;
 list($dbOk, $dbMessage) = $sync->runDatabaseChecks();
 if (!$dbOk) {
-    fwrite(STDERR, 'Commerce Automation Hub database check failed: ' . $dbMessage . PHP_EOL);
+    fwrite(STDERR, 'Finance Automation Hub database check failed: ' . $dbMessage . PHP_EOL);
     exit(1);
 }
 
-if (!isset($conf->global->DCH_WOOCOMMERCE_ENABLED) || !empty($conf->global->DCH_WOOCOMMERCE_ENABLED)) {
+if (!isset($conf->global->FAH_WOOCOMMERCE_ENABLED) || !empty($conf->global->FAH_WOOCOMMERCE_ENABLED)) {
     $stats = $sync->sync(100, 100);
-    echo 'Commerce Automation Hub (WooCommerce) imported=' . $stats['imported'] . ' skipped=' . $stats['skipped'] . ' errors=' . $stats['errors'] . PHP_EOL;
+    echo 'Finance Automation Hub (WooCommerce) imported=' . $stats['imported'] . ' skipped=' . $stats['skipped'] . ' errors=' . $stats['errors'] . PHP_EOL;
     foreach (array_slice($stats['messages'], 0, 20) as $message) echo '- ' . $message . PHP_EOL;
     $totalErrors += (int) $stats['errors'];
 }
 
 foreach (array('amazon', 'sumup') as $connector) {
-    if (empty($conf->global->{'DCH_' . strtoupper($connector) . '_ENABLED'})) continue;
+    if (empty($conf->global->{'FAH_' . strtoupper($connector) . '_ENABLED'})) continue;
     $cursor = '';
     $aggregate = array('imported' => 0, 'skipped' => 0, 'errors' => 0, 'messages' => array());
     for ($batch = 0; $batch < 500; $batch++) {
@@ -47,7 +47,7 @@ foreach (array('amazon', 'sumup') as $connector) {
         if (empty($stats['has_more']) || empty($stats['next_cursor'])) break;
         $cursor = (string) $stats['next_cursor'];
     }
-    echo 'Commerce Automation Hub (' . ucfirst($connector) . ') imported=' . $aggregate['imported'] . ' skipped=' . $aggregate['skipped'] . ' errors=' . $aggregate['errors'] . PHP_EOL;
+    echo 'Finance Automation Hub (' . ucfirst($connector) . ') imported=' . $aggregate['imported'] . ' skipped=' . $aggregate['skipped'] . ' errors=' . $aggregate['errors'] . PHP_EOL;
     foreach (array_slice($aggregate['messages'], 0, 20) as $message) echo '- ' . $message . PHP_EOL;
     $totalErrors += $aggregate['errors'];
 }

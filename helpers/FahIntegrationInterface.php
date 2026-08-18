@@ -3,20 +3,20 @@
 if (!defined('MAIN_DB_PREFIX')) die('Access denied');
 
 /**
- * Contract that every Commerce Automation Hub integration must implement.
+ * Contract that every Finance Automation Hub integration must implement.
  *
  * An "integration" is an optional, self-contained plugin that extends the sync
  * with data from a third-party WordPress plugin (e.g. Germanized Pro, WCPDF).
  * The core module has zero direct knowledge of any specific integration class.
  *
  * Lifecycle:
- *   1. WbsIntegrationManager scans helpers/ for *Integration.php files.
+ *   1. FahIntegrationManager scans helpers/ for *Integration.php files.
  *   2. Instances are created with ($db, $conf).
  *   3. isDetected() gates whether the integration is shown in Setup and called
  *      during sync — false means the integration is silently skipped.
  *   4. The sync loop and setup page call hooks via this interface only.
  */
-interface WbsIntegrationInterface
+interface FahIntegrationInterface
 {
     /** Short machine ID, e.g. 'germanized'. Used as HTML element IDs. */
     public function getId();
@@ -46,7 +46,7 @@ interface WbsIntegrationInterface
 
     /**
      * Attempt to download and store the invoice PDF for a synced order.
-     * $sync is the Commerce Automation Hub instance; call its public utilities as needed.
+     * $sync is the Finance Automation Hub instance; call its public utilities as needed.
      * Return array{ok:bool, already:bool, filepath:string, log:string[]}.
      * Return ['ok'=>false,...] immediately if this integration does not handle PDFs
      * or if PDF download is disabled in its own settings.
@@ -57,7 +57,7 @@ interface WbsIntegrationInterface
      * Enrich order data from integration-specific endpoints during cache refresh.
      * Called once per order in refreshFullCacheBatch().
      * Return array{invoice_number:string, pdf_url:string} (empty strings = no data).
-     * $sync is the Commerce Automation Hub instance for reading constants.
+     * $sync is the Finance Automation Hub instance for reading constants.
      */
     public function enrichCacheOrder(array $order, $sync);
 

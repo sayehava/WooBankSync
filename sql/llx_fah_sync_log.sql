@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS llx_woobanksync_log (
+CREATE TABLE IF NOT EXISTS llx_fah_sync_log (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   entity integer NOT NULL DEFAULT 1,
   connector varchar(32) NOT NULL DEFAULT 'woocommerce',
@@ -20,5 +20,5 @@ CREATE TABLE IF NOT EXISTS llx_woobanksync_log (
   date_order datetime DEFAULT NULL,
   date_sync datetime DEFAULT NULL,
   tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_dch_entity_connector_order (entity, connector, woo_order_id)
+  UNIQUE KEY uk_fah_entity_connector_order (entity, connector, woo_order_id)
 ) ENGINE=innodb;

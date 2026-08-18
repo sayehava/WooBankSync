@@ -1,7 +1,7 @@
 <?php
 
-/** Read-only sales and provider-cost analytics for Commerce Automation Hub. */
-class DchSalesReport
+/** Read-only sales and provider-cost analytics for Finance Automation Hub. */
+class FahSalesReport
 {
     private $db;
     private $conf;
@@ -50,7 +50,7 @@ class DchSalesReport
     {
         $rows = array();
         $pieces = $filters['warehouse_id'] > 0
-            ? 'SUM(COALESCE((SELECT SUM(sm.quantity) FROM ' . MAIN_DB_PREFIX . 'dch_stock_movement sm'
+            ? 'SUM(COALESCE((SELECT SUM(sm.quantity) FROM ' . MAIN_DB_PREFIX . 'fah_stock_movement sm'
                 . ' WHERE sm.entity=s.entity AND sm.connector=s.connector AND sm.external_order_id=s.external_order_id'
                 . ' AND sm.external_line_id=s.external_line_id AND sm.event_key=\'sale\' AND sm.status=\'applied\''
                 . ' AND sm.fk_warehouse=' . (int) $filters['warehouse_id'] . '),0))'
@@ -59,7 +59,7 @@ class DchSalesReport
             . ' SUM(CASE WHEN s.is_bundle=0 THEN s.quantity ELSE 0 END) AS single_items,'
             . ' SUM(CASE WHEN s.is_bundle=1 THEN s.quantity ELSE 0 END) AS bundle_items,'
             . ' SUM(s.quantity) AS sold_items, ' . $pieces . ' AS inventory_pieces'
-            . ' FROM ' . MAIN_DB_PREFIX . 'dch_sales_line s WHERE ' . $this->salesWhere($filters, 's')
+            . ' FROM ' . MAIN_DB_PREFIX . 'fah_sales_line s WHERE ' . $this->salesWhere($filters, 's')
             . ' GROUP BY s.connector ORDER BY s.connector';
         $resql = $this->db->query($sql);
         if ($resql) while ($obj = $this->db->fetch_object($resql)) $rows[] = $this->summaryRow($obj);
@@ -70,14 +70,14 @@ class DchSalesReport
     {
         $rows = array();
         $pieces = $filters['warehouse_id'] > 0
-            ? 'SUM(COALESCE((SELECT SUM(sm.quantity) FROM ' . MAIN_DB_PREFIX . 'dch_stock_movement sm'
+            ? 'SUM(COALESCE((SELECT SUM(sm.quantity) FROM ' . MAIN_DB_PREFIX . 'fah_stock_movement sm'
                 . ' WHERE sm.entity=s.entity AND sm.connector=s.connector AND sm.external_order_id=s.external_order_id'
                 . ' AND sm.external_line_id=s.external_line_id AND sm.event_key=\'sale\' AND sm.status=\'applied\''
                 . ' AND sm.fk_warehouse=' . (int) $filters['warehouse_id'] . '),0))'
             : 'SUM(s.component_units)';
         $sql = 'SELECT s.connector, s.fk_catalog_product, s.external_sku, s.product_label, s.is_bundle, s.source_origin,'
             . ' COUNT(DISTINCT s.external_order_id) AS orders_count, SUM(s.quantity) AS sold_items, ' . $pieces . ' AS inventory_pieces'
-            . ' FROM ' . MAIN_DB_PREFIX . 'dch_sales_line s WHERE ' . $this->salesWhere($filters, 's')
+            . ' FROM ' . MAIN_DB_PREFIX . 'fah_sales_line s WHERE ' . $this->salesWhere($filters, 's')
             . ' GROUP BY s.connector, s.fk_catalog_product, s.external_sku, s.product_label, s.is_bundle, s.source_origin'
             . ' ORDER BY s.connector, sold_items DESC, s.product_label';
         $resql = $this->db->query($sql);
@@ -105,9 +105,9 @@ class DchSalesReport
         if ($filters['warehouse_id'] > 0) {
             $warehouseId = (int) $filters['warehouse_id'];
             $defaults = array(
-                'woocommerce' => (int) ($this->conf->global->DCH_WOOCOMMERCE_WAREHOUSE_ID ?? 0),
-                'amazon' => (int) ($this->conf->global->DCH_AMAZON_WAREHOUSE_ID ?? 0),
-                'sumup' => (int) ($this->conf->global->DCH_SUMUP_WAREHOUSE_ID ?? 0),
+                'woocommerce' => (int) ($this->conf->global->FAH_WOOCOMMERCE_WAREHOUSE_ID ?? 0),
+                'amazon' => (int) ($this->conf->global->FAH_AMAZON_WAREHOUSE_ID ?? 0),
+                'sumup' => (int) ($this->conf->global->FAH_SUMUP_WAREHOUSE_ID ?? 0),
             );
             $fallback = "CASE s.connector WHEN 'woocommerce' THEN " . $defaults['woocommerce'] . " WHEN 'amazon' THEN " . $defaults['amazon'] . " WHEN 'sumup' THEN " . $defaults['sumup'] . ' ELSE 0 END';
             $where .= ' AND COALESCE(NULLIF(bc.fk_warehouse,0),' . $fallback . ')=' . $warehouseId;
@@ -116,8 +116,8 @@ class DchSalesReport
             . ' SUM(CASE WHEN s.is_bundle=0 THEN s.quantity*bc.quantity ELSE 0 END) AS direct_units,'
             . ' SUM(CASE WHEN s.is_bundle=1 THEN s.quantity*bc.quantity ELSE 0 END) AS bundle_units,'
             . ' SUM(s.quantity*bc.quantity) AS total_units'
-            . ' FROM ' . MAIN_DB_PREFIX . 'dch_sales_line s'
-            . ' INNER JOIN ' . MAIN_DB_PREFIX . 'dch_bundle_component bc ON bc.entity=s.entity AND bc.fk_catalog_product=s.fk_catalog_product'
+            . ' FROM ' . MAIN_DB_PREFIX . 'fah_sales_line s'
+            . ' INNER JOIN ' . MAIN_DB_PREFIX . 'fah_bundle_component bc ON bc.entity=s.entity AND bc.fk_catalog_product=s.fk_catalog_product'
             . ' INNER JOIN ' . MAIN_DB_PREFIX . 'product p ON p.rowid=bc.fk_product'
             . ' WHERE ' . $where
             . ' GROUP BY s.connector, p.rowid, p.ref, p.label ORDER BY total_units DESC, p.ref, s.connector';
@@ -150,8 +150,8 @@ class DchSalesReport
             . ' SELECT s.rowid AS sales_rowid, s.connector, s.external_order_id, sm.fk_warehouse,'
             . ' e.ref AS warehouse_ref, COALESCE(NULLIF(e.lieu,\'\'),e.description,\'\') AS warehouse_label,'
             . ' MAX(s.quantity) AS sold_items, SUM(sm.quantity) AS inventory_pieces'
-            . ' FROM ' . MAIN_DB_PREFIX . 'dch_sales_line s'
-            . ' INNER JOIN ' . MAIN_DB_PREFIX . 'dch_stock_movement sm ON sm.entity=s.entity AND sm.connector=s.connector'
+            . ' FROM ' . MAIN_DB_PREFIX . 'fah_sales_line s'
+            . ' INNER JOIN ' . MAIN_DB_PREFIX . 'fah_stock_movement sm ON sm.entity=s.entity AND sm.connector=s.connector'
             . ' AND sm.external_order_id=s.external_order_id AND sm.external_line_id=s.external_line_id'
             . ' LEFT JOIN ' . MAIN_DB_PREFIX . 'entrepot e ON e.rowid=sm.fk_warehouse'
             . ' WHERE ' . $this->salesWhere($filters, 's', false) . ' AND ' . $movementWhere
@@ -180,7 +180,7 @@ class DchSalesReport
         $rows = array();
         $sql = 'SELECT l.connector, l.currency, COUNT(DISTINCT l.woo_order_id) AS orders_count,'
             . ' SUM(l.gross_amount) AS gross_amount, SUM(l.fee_amount) AS fee_amount, SUM(l.payout_amount) AS payout_amount'
-            . ' FROM ' . MAIN_DB_PREFIX . 'woobanksync_log l WHERE ' . $this->financeWhere($filters, 'l')
+            . ' FROM ' . MAIN_DB_PREFIX . 'fah_sync_log l WHERE ' . $this->financeWhere($filters, 'l')
             . ' GROUP BY l.connector, l.currency ORDER BY l.connector, l.currency';
         $resql = $this->db->query($sql);
         if ($resql) {
@@ -231,7 +231,7 @@ class DchSalesReport
         if ($filters['connector'] !== '') $where[] = $alias . ".connector='" . $this->db->escape($filters['connector']) . "'";
         $this->appendPeriodWhere($where, $filters, $alias . '.date_order');
         if ($warehouse && $filters['warehouse_id'] > 0) {
-            $where[] = 'EXISTS (SELECT 1 FROM ' . MAIN_DB_PREFIX . 'dch_stock_movement whsm'
+            $where[] = 'EXISTS (SELECT 1 FROM ' . MAIN_DB_PREFIX . 'fah_stock_movement whsm'
                 . ' WHERE whsm.entity=' . $alias . '.entity AND whsm.connector=' . $alias . '.connector'
                 . ' AND whsm.external_order_id=' . $alias . '.external_order_id AND whsm.external_line_id=' . $alias . '.external_line_id'
                 . " AND whsm.event_key='sale' AND whsm.status='applied' AND whsm.fk_warehouse=" . (int) $filters['warehouse_id'] . ')';
@@ -255,7 +255,7 @@ class DchSalesReport
         if ($filters['connector'] !== '') $where[] = $alias . ".connector='" . $this->db->escape($filters['connector']) . "'";
         $this->appendPeriodWhere($where, $filters, $alias . '.date_order');
         if ($filters['warehouse_id'] > 0) {
-            $where[] = 'EXISTS (SELECT 1 FROM ' . MAIN_DB_PREFIX . 'dch_stock_movement fsm'
+            $where[] = 'EXISTS (SELECT 1 FROM ' . MAIN_DB_PREFIX . 'fah_stock_movement fsm'
                 . ' WHERE fsm.entity=' . $alias . '.entity AND fsm.connector=' . $alias . '.connector'
                 . ' AND fsm.external_order_id=' . $alias . '.woo_order_id AND fsm.event_key=\'sale\''
                 . " AND fsm.status='applied' AND fsm.fk_warehouse=" . (int) $filters['warehouse_id'] . ')';

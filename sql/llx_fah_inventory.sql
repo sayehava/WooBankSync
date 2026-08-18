@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS llx_dch_catalog_product (
+CREATE TABLE IF NOT EXISTS llx_fah_catalog_product (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   entity integer NOT NULL DEFAULT 1,
   connector varchar(32) NOT NULL,
@@ -11,11 +11,11 @@ CREATE TABLE IF NOT EXISTS llx_dch_catalog_product (
   active integer NOT NULL DEFAULT 1,
   date_seen datetime DEFAULT NULL,
   tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_dch_catalog_external (entity, connector, external_product_id, external_variant_id),
-  KEY idx_dch_catalog_sku (entity, connector, external_sku)
+  UNIQUE KEY uk_fah_catalog_external (entity, connector, external_product_id, external_variant_id),
+  KEY idx_fah_catalog_sku (entity, connector, external_sku)
 ) ENGINE=innodb;
 
-CREATE TABLE IF NOT EXISTS llx_dch_bundle_component (
+CREATE TABLE IF NOT EXISTS llx_fah_bundle_component (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   entity integer NOT NULL DEFAULT 1,
   fk_catalog_product integer NOT NULL,
@@ -23,11 +23,11 @@ CREATE TABLE IF NOT EXISTS llx_dch_bundle_component (
   fk_warehouse integer NOT NULL DEFAULT 0,
   quantity double(24,8) NOT NULL DEFAULT 1,
   tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_dch_component_product (entity, fk_catalog_product, fk_product),
-  KEY idx_dch_component_catalog (fk_catalog_product)
+  UNIQUE KEY uk_fah_component_product (entity, fk_catalog_product, fk_product),
+  KEY idx_fah_component_catalog (fk_catalog_product)
 ) ENGINE=innodb;
 
-CREATE TABLE IF NOT EXISTS llx_dch_stock_movement (
+CREATE TABLE IF NOT EXISTS llx_fah_stock_movement (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   entity integer NOT NULL DEFAULT 1,
   connector varchar(32) NOT NULL,
@@ -46,11 +46,11 @@ CREATE TABLE IF NOT EXISTS llx_dch_stock_movement (
   date_order datetime DEFAULT NULL,
   date_created datetime DEFAULT NULL,
   tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_dch_stock_event (entity, connector, external_order_id, external_line_id, event_key, fk_product),
-  KEY idx_dch_stock_status (entity, connector, status)
+  UNIQUE KEY uk_fah_stock_event (entity, connector, external_order_id, external_line_id, event_key, fk_product),
+  KEY idx_fah_stock_status (entity, connector, status)
 ) ENGINE=innodb;
 
-CREATE TABLE IF NOT EXISTS llx_dch_sales_line (
+CREATE TABLE IF NOT EXISTS llx_fah_sales_line (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   entity integer NOT NULL DEFAULT 1,
   connector varchar(32) NOT NULL,
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS llx_dch_sales_line (
   date_order datetime DEFAULT NULL,
   date_recorded datetime DEFAULT NULL,
   tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_dch_sales_line (entity, connector, external_order_id, external_line_id),
-  KEY idx_dch_sales_date (entity, date_order),
-  KEY idx_dch_sales_connector_date (entity, connector, date_order)
+  UNIQUE KEY uk_fah_sales_line (entity, connector, external_order_id, external_line_id),
+  KEY idx_fah_sales_date (entity, date_order),
+  KEY idx_fah_sales_connector_date (entity, connector, date_order)
 ) ENGINE=innodb;
