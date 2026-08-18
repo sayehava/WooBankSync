@@ -902,7 +902,7 @@ class FinanceAutomationHub
         return true;
     }
 
-    public function desyncAllSyncedEntries()
+    public function desyncAllSyncedEntries($deleteOwnedAccounts = false)
     {
         $table = MAIN_DB_PREFIX . 'fah_sync_log';
         $bankIds = array();
@@ -1045,13 +1045,76 @@ class FinanceAutomationHub
         $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'fah_order_cache WHERE entity=' . (int) $this->conf->entity);
         $this->db->commit();
 
-        return array(true, 'Desync complete.', array(
+        $deletedAccounts = 0;
+        $accountMessage = '';
+        if ($deleteOwnedAccounts) {
+            list($accountsOk, $accountMessage, $deletedAccounts) = $this->deleteOwnedBankAccounts();
+            if (!$accountsOk) $accountMessage = ' ' . $accountMessage;
+        }
+
+        return array(true, 'Desync complete.' . $accountMessage, array(
             'bank'    => (int) $deletedBank,
+            'accounts' => (int) $deletedAccounts,
             'links'   => (int) $deletedLinks,
             'classes' => (int) $deletedClasses,
             'logs'    => (int) $deletedLogs,
             'pdfs'    => (int) $deletedPdfs,
         ));
+    }
+
+    public function deleteOwnedBankAccounts()
+    {
+        $ids = $this->getOwnedBankAccountIds();
+        if (empty($ids)) return array(true, ' No module-created bank accounts needed removal.', 0);
+        if (!isset($GLOBALS['user']) || empty($GLOBALS['user']->id)) return array(false, 'Module-created accounts could not be removed because no Dolibarr user is available.', 0);
+        require_once DOL_DOCUMENT_ROOT . '/compta/bank/class/account.class.php';
+
+        $deleted = array();
+        $blocked = array();
+        foreach ($ids as $accountId) {
+            $account = new Account($this->db);
+            if ($account->fetch((int) $accountId) <= 0) continue;
+            $lineCheck = $this->db->query('SELECT COUNT(*) AS total, SUM(CASE WHEN fk_type=\'SOLD\' AND amount=0 THEN 0 ELSE 1 END) AS non_initial FROM ' . MAIN_DB_PREFIX . 'bank WHERE fk_account=' . (int) $accountId);
+            $lineState = $lineCheck ? $this->db->fetch_object($lineCheck) : null;
+            if (!$lineState || (int) $lineState->non_initial > 0) {
+                $blocked[] = (string) $account->ref;
+                continue;
+            }
+            if (!$account->can_be_deleted()) {
+                $blocked[] = (string) $account->ref;
+                continue;
+            }
+            if ($account->delete($GLOBALS['user']) > 0) $deleted[] = (int) $accountId;
+            else $blocked[] = (string) $account->ref;
+        }
+        if (!empty($deleted)) $this->clearDeletedBankMappings($deleted);
+        $message = ' Removed ' . count($deleted) . ' module-created bank account(s).';
+        if (!empty($blocked)) $message .= ' Kept non-empty or linked accounts: ' . implode(', ', $blocked) . '.';
+        return array(true, $message, count($deleted));
+    }
+
+    private function clearDeletedBankMappings(array $deletedIds)
+    {
+        $deletedIds = array_map('intval', $deletedIds);
+        $map = $this->gatewayMap();
+        foreach ($map as &$mapping) if (in_array((int) ($mapping['bank_id'] ?? 0), $deletedIds, true)) $mapping['bank_id'] = 0;
+        unset($mapping);
+        $this->setConst('FAH_GATEWAY_MAP_JSON', json_encode($map), 'chaine');
+
+        foreach (array('amazon', 'sumup') as $connector) {
+            $key = 'FAH_' . strtoupper($connector) . '_FINANCE_MAP_JSON';
+            $map = $this->getJsonConst($key, array());
+            foreach ($map as &$mapping) if (in_array((int) ($mapping['bank_id'] ?? 0), $deletedIds, true)) $mapping['bank_id'] = 0;
+            unset($mapping);
+            $this->setConst($key, json_encode($map), 'chaine');
+        }
+        foreach (array('FAH_PAYPAL_BANK_ID', 'FAH_STRIPE_BANK_ID', 'FAH_AMAZONPAY_BANK_ID', 'FAH_DIRECT_BANK_ID', 'FAH_AMAZON_BANK_ID', 'FAH_SUMUP_BANK_ID') as $key) {
+            if (in_array((int) $this->getConst($key, '0'), $deletedIds, true)) $this->setConst($key, '0', 'chaine');
+        }
+        $owned = json_decode((string) $this->getConst('FAH_OWNED_BANK_ACCOUNT_IDS', '[]'), true);
+        if (!is_array($owned)) $owned = array();
+        $owned = array_values(array_diff(array_map('intval', $owned), $deletedIds));
+        $this->setConst('FAH_OWNED_BANK_ACCOUNT_IDS', json_encode($owned), 'chaine');
     }
 
     private function countRows($table, $where)
@@ -2074,12 +2137,17 @@ class FinanceAutomationHub
             $account->bank = 'Virtual payment clearing account';
             $account->number = $safeRef;
             $account->account_number = $safeRef;
+            $account->type = Account::TYPE_CURRENT;
             $account->courant = 1;
+            $account->status = Account::STATUS_OPEN;
             $account->clos = 0;
             $account->entity = (int) $this->conf->entity;
+            $account->country_id = (int) $this->getDefaultCountryId();
+            $account->date_solde = dol_now();
+            $account->balance = 0;
             $account->currency_code = !empty($this->conf->currency) ? $this->conf->currency : 'EUR';
             $user = isset($GLOBALS['user']) ? $GLOBALS['user'] : null;
-            $id = method_exists($account, 'create') ? $account->create($user) : 0;
+            $id = $user && method_exists($account, 'create') ? $account->create($user) : 0;
             if ($id > 0) {
                 $this->rememberOwnedBankAccount((int) $id);
                 return (int) $id;
