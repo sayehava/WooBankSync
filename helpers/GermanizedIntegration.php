@@ -489,7 +489,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
             return '';
         }
 
-        $safe     = static function ($s) { return preg_replace('/[^a-zA-Z0-9\-_]/', '-', trim((string) $s)); };
+        $safe     = static function ($s) { return substr(preg_replace('/[^a-zA-Z0-9\-_]/', '-', trim((string) $s)), 0, 80); };
         $ts       = time();
         $filename = 'woo-' . $safe($orderNumber) . ($invoiceNumber !== '' ? '-' . $safe($invoiceNumber) : '') . '-dld-' . $ts . '.pdf';
         $filepath = $dir . '/' . $filename;
@@ -716,7 +716,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'ecm_files');
         if (empty($fields)) return false;
         $folderPath = ltrim(dirname($relPath), '/\\');
-        $label      = pathinfo($filename, PATHINFO_FILENAME);
+        $label      = substr(pathinfo($filename, PATHINFO_FILENAME), 0, 128);
         $userId     = !empty($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : max(1, (int) $this->getConst('DCH_STOCK_USER_ID', '1'));
         $data       = array();
         $this->addDataIfColumn($data, $fields, 'ref', "'" . $this->db->escape(sha1($folderPath . '/' . $filename)) . "'", false);
