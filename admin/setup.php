@@ -257,13 +257,17 @@ if ($action === 'save_docs') {
 }
 
 if ($action === 'save_amount_fields') {
-    wbs_set_const_safe($db, 'WBS_EXTRAFIELD_GROSS_CODE', GETPOST('WBS_EXTRAFIELD_GROSS_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
-    wbs_set_const_safe($db, 'WBS_EXTRAFIELD_FEE_CODE', GETPOST('WBS_EXTRAFIELD_FEE_CODE', 'aZ09'), 'chaine', 0, '', $conf->entity);
-    setEventMessages('WooCommerce amount custom field mapping saved.', null, 'mesgs');
+    list($ok, $msg) = $sync->saveAmountExtraFieldMapping(
+        GETPOST('WBS_EXTRAFIELD_GROSS_CODE', 'aZ09'), GETPOST('WBS_EXTRAFIELD_FEE_CODE', 'aZ09'),
+        GETPOST('WBS_EXTRAFIELD_GROSS_LABEL', 'restricthtml'), GETPOST('WBS_EXTRAFIELD_FEE_LABEL', 'restricthtml')
+    );
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
 if ($action === 'create_amount_extrafields') {
-    list($ok, $msg) = $sync->createAndMapAmountExtraFields();
+    list($ok, $msg) = $sync->createAndMapAmountExtraFields(
+        GETPOST('WBS_EXTRAFIELD_GROSS_LABEL', 'restricthtml'), GETPOST('WBS_EXTRAFIELD_FEE_LABEL', 'restricthtml')
+    );
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
@@ -620,18 +624,20 @@ if (empty($gateways)) {
 <div class="center"><input class="button button-save" type="submit" value="Save mapping"></div>
 </form><br>
 <?php
-$bankExtraFields  = $sync->getBankExtraFields();
+$bankExtraFields  = $sync->getBankAmountExtraFields();
 $mappedGrossField = (string) ($conf->global->WBS_EXTRAFIELD_GROSS_CODE ?? '');
 $mappedFeeField   = (string) ($conf->global->WBS_EXTRAFIELD_FEE_CODE ?? '');
+$grossFieldLabel  = $bankExtraFields[$mappedGrossField] ?? 'WooCommerce gross amount';
+$feeFieldLabel    = $bankExtraFields[$mappedFeeField] ?? 'WooCommerce fee amount';
 ?>
 <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?connector_view=woocommerce">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
-<input type="hidden" name="action" value="save_amount_fields">
 <table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">WooCommerce amount custom fields (gross and fee)</td></tr>
 <tr><td colspan="2" class="opacitymedium" style="padding-bottom:8px;">
 Each WooCommerce bank entry is created with <strong>net amount received</strong> (gross &minus; fee). The original gross and fee
 can optionally be stored in Dolibarr bank-entry custom fields for WooCommerce reports and exports.
+Create numeric custom fields yourself and map them here, or use the explicit automatic creation button below.
 </td></tr>
 <tr><td class="titlefield">Gross amount field</td><td>
 <select class="flat minwidth300" name="WBS_EXTRAFIELD_GROSS_CODE">
@@ -642,6 +648,9 @@ can optionally be stored in Dolibarr bank-entry custom fields for WooCommerce re
 </select>
 <br><span class="opacitymedium">Custom field that will receive the original WooCommerce order gross total.</span>
 </td></tr>
+<tr><td class="titlefield">Gross field label</td><td>
+<input class="flat minwidth300" type="text" name="WBS_EXTRAFIELD_GROSS_LABEL" value="<?php echo dol_escape_htmltag($grossFieldLabel); ?>" maxlength="255">
+</td></tr>
 <tr><td class="titlefield">Fee amount field</td><td>
 <select class="flat minwidth300" name="WBS_EXTRAFIELD_FEE_CODE">
 <option value="">-- not mapped --</option>
@@ -651,12 +660,15 @@ can optionally be stored in Dolibarr bank-entry custom fields for WooCommerce re
 </select>
 <br><span class="opacitymedium">Custom field that will receive the WooCommerce payment processor fee (Gebühr).</span>
 </td></tr>
+<tr><td class="titlefield">Fee field label</td><td>
+<input class="flat minwidth300" type="text" name="WBS_EXTRAFIELD_FEE_LABEL" value="<?php echo dol_escape_htmltag($feeFieldLabel); ?>" maxlength="255">
+<br><span class="opacitymedium">Saving also renames the selected fields' display labels.</span>
+</td></tr>
 </table>
-<div class="center"><input class="button button-save" type="submit" value="Save WooCommerce amount field mapping"></div>
-</form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?connector_view=woocommerce" class="center" style="margin-top:6px;">
-<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="create_amount_extrafields">
-<input class="button" type="submit" value="Create and map missing WooCommerce amount fields automatically">
+<div class="center">
+<button class="button button-save" type="submit" name="action" value="save_amount_fields">Save mapping and labels</button>
+<button class="button" type="submit" name="action" value="create_amount_extrafields">Create and map missing amount fields automatically</button>
+</div>
 </form><br>
 <?php } ?>
 <?php
