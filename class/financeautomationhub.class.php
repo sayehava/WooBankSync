@@ -2054,14 +2054,16 @@ class FinanceAutomationHub
         $wasExisting = false;
         $table = MAIN_DB_PREFIX . 'bank_account';
         $safeRef = $this->makeUniqueSafeBankRef($ref);
-        $sql = 'SELECT rowid FROM ' . $table . " WHERE entity IN (0," . (int) $this->conf->entity . ") AND (label='" . $this->db->escape($label) . "' OR ref='" . $this->db->escape($safeRef) . "') LIMIT 1";
+        $sql = 'SELECT rowid, bank FROM ' . $table . " WHERE entity IN (0," . (int) $this->conf->entity . ") AND (label='" . $this->db->escape($label) . "' OR ref='" . $this->db->escape($safeRef) . "') LIMIT 1";
         $res = $this->db->query($sql);
         if ($res && ($obj = $this->db->fetch_object($res))) {
             $wasExisting = true;
             if (strpos((string) $label, 'Woo ') !== 0) {
                 $this->db->query('UPDATE ' . $table . " SET label='" . $this->db->escape($label) . "' WHERE rowid=" . (int) $obj->rowid . " AND label LIKE 'Woo %'");
             }
-            return (int) $obj->rowid;
+            $id = (int) $obj->rowid;
+            if (in_array((string) $obj->bank, array('Virtual payment clearing account', 'Virtual commerce clearing account'), true)) $this->rememberOwnedBankAccount($id);
+            return $id;
         }
 
         if (file_exists(DOL_DOCUMENT_ROOT . '/compta/bank/class/account.class.php')) {
@@ -2078,7 +2080,10 @@ class FinanceAutomationHub
             $account->currency_code = !empty($this->conf->currency) ? $this->conf->currency : 'EUR';
             $user = isset($GLOBALS['user']) ? $GLOBALS['user'] : null;
             $id = method_exists($account, 'create') ? $account->create($user) : 0;
-            if ($id > 0) return (int) $id;
+            if ($id > 0) {
+                $this->rememberOwnedBankAccount((int) $id);
+                return (int) $id;
+            }
         }
 
         $fields = $this->getTableColumns($table);
@@ -2101,7 +2106,38 @@ class FinanceAutomationHub
         $sql = 'INSERT INTO ' . $table . ' (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
         $res = $this->db->query($sql);
         if (!$res) return 0;
-        return (int) $this->db->last_insert_id($table);
+        $id = (int) $this->db->last_insert_id($table);
+        if ($id > 0) $this->rememberOwnedBankAccount($id);
+        return $id;
+    }
+
+    private function rememberOwnedBankAccount($accountId)
+    {
+        $accountId = (int) $accountId;
+        if ($accountId <= 0) return;
+        $ids = json_decode((string) $this->getConst('FAH_OWNED_BANK_ACCOUNT_IDS', '[]'), true);
+        if (!is_array($ids)) $ids = array();
+        $ids = array_values(array_unique(array_filter(array_map('intval', array_merge($ids, array($accountId))))));
+        $this->setConst('FAH_OWNED_BANK_ACCOUNT_IDS', json_encode($ids), 'chaine');
+    }
+
+    public function getOwnedBankAccountIds()
+    {
+        $ids = json_decode((string) $this->getConst('FAH_OWNED_BANK_ACCOUNT_IDS', '[]'), true);
+        if (!is_array($ids)) $ids = array();
+        foreach ($this->gatewayMap() as $mapping) if (!empty($mapping['bank_id'])) $ids[] = (int) $mapping['bank_id'];
+        foreach (array('amazon', 'sumup') as $connector) {
+            foreach ($this->channelFinanceMap($connector) as $mapping) if (!empty($mapping['bank_id'])) $ids[] = (int) $mapping['bank_id'];
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if (empty($ids)) return array();
+
+        $owned = array();
+        $resql = $this->db->query('SELECT rowid, bank FROM ' . MAIN_DB_PREFIX . 'bank_account WHERE rowid IN (' . implode(',', $ids) . ') AND entity IN (0,' . (int) $this->conf->entity . ')');
+        if ($resql) while ($row = $this->db->fetch_object($resql)) {
+            if (in_array((string) $row->bank, array('Virtual payment clearing account', 'Virtual commerce clearing account'), true)) $owned[] = (int) $row->rowid;
+        }
+        return array_values(array_unique($owned));
     }
 
 
