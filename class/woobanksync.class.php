@@ -337,9 +337,13 @@ class DolliCommerceHub
             $gatewayConfig['payout_key'] = '';
         }
         $fee = $connector === 'woocommerce'
-            ? $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '')
+            ? $this->resolveWooFee($order, $gatewayConfig)
             : $this->normalizeAmount($order['fee'] ?? 0);
-        if ($connector === 'woocommerce' && $fee <= 0) $fee = $this->autoDetectFee($order);
+        if ($connector === 'woocommerce' && $fee <= 0 && !empty($order['_dch_fee_error'])) {
+            $message = $channelLabel . ' order #' . $orderNumber . ': ' . $order['_dch_fee_error'] . ' No bank entry was created with an incorrect zero fee.' . $stockMessage;
+            $this->insertLog($order, 0, $gross, 0, 0, 0, 'pending_finance', $message, $dateOrder, $invoiceNumber, 0);
+            return array('status' => 'skipped', 'message' => $message);
+        }
         $calculatedPayout = max(0.0, $gross - $fee);
         $providerPayout = $connector === 'woocommerce'
             ? $this->extractPayoutAmountFromConfiguredKey($order, $gatewayConfig['payout_key'] ?? '')
@@ -772,8 +776,13 @@ class DolliCommerceHub
 
                 $paymentMethod = (string) ($order['payment_method'] ?? '');
                 $gatewayConfig = $this->resolveGatewayConfig($paymentMethod, $map);
-                $newFee = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '');
-                if ($newFee <= 0) $newFee = $this->autoDetectFee($order);
+                $newFee = $this->resolveWooFee($order, $gatewayConfig);
+                if ($newFee <= 0 && !empty($order['_dch_fee_error'])) {
+                    $stats['errors']++;
+                    $stats['messages'][] = 'Order #' . $logRow->woo_order_number . ': ' . $order['_dch_fee_error'];
+                    $stats['items'][] = array('id' => $orderId, 'number' => (string) $logRow->woo_order_number, 'status' => 'error');
+                    continue;
+                }
 
                 $oldGross = (float) ($logRow->gross_amount ?? 0);
                 $oldFee = (float) ($logRow->fee_amount ?? 0);
@@ -1525,6 +1534,36 @@ class DolliCommerceHub
             }
         }
         return !empty($candidates) ? max($candidates) : 0.0;
+    }
+
+    private function resolveWooFee(array &$order, array $gatewayConfig)
+    {
+        $fee = $this->extractAmountFromConfiguredKey($order, $gatewayConfig['fee_key'] ?? '');
+        if ($fee <= 0) $fee = $this->autoDetectFee($order);
+        if ($fee > 0) return $fee;
+
+        $paymentMethod = strtolower((string) ($order['payment_method'] ?? ''));
+        if (strpos($paymentMethod, 'stripe') === false && strpos($paymentMethod, 'klarna') === false && strpos($paymentMethod, 'woocommerce_payments') === false) return 0.0;
+        $secretKey = trim((string) $this->getConst('DCH_STRIPE_SECRET_KEY'));
+        if ($secretKey === '') {
+            $order['_dch_fee_error'] = 'Exact Stripe fee unavailable: configure the Stripe secret key in WooCommerce settings.';
+            return 0.0;
+        }
+
+        $references = array((string) ($order['transaction_id'] ?? ''));
+        $referenceKeys = array('_stripe_intent_id', '_stripe_source_id', '_transaction_id', '_wc_stripe_charge_id');
+        foreach ((array) ($order['meta_data'] ?? array()) as $meta) {
+            if (in_array((string) ($meta['key'] ?? ''), $referenceKeys, true)) $references[] = (string) ($meta['value'] ?? '');
+        }
+        require_once __DIR__ . '/dchstripeclient.class.php';
+        $client = new DchStripeClient($secretKey, $this->getConst('DCH_STRIPE_ACCOUNT_ID'));
+        $fee = $client->getFee($references, (string) ($order['currency'] ?? ''));
+        if ($fee !== false) {
+            $order['_dch_fee_source'] = 'Stripe balance transaction API';
+            return (float) $fee;
+        }
+        $order['_dch_fee_error'] = 'Exact Stripe fee lookup failed: ' . $client->error;
+        return 0.0;
     }
 
     private function maybeUnserialize($value)
