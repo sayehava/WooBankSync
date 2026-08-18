@@ -407,7 +407,16 @@ class DolliCommerceHub
                 $this->insertLog($order, $bankId, $gross, $fee, 0, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
                 return array('status' => 'errors', 'message' => $msg);
             }
-            if ($connector === 'woocommerce') $this->writeBankAmountExtraFields($bankLineId, $gross, $fee);
+            if ($connector === 'woocommerce') {
+                list($fieldsOk, $fieldsMessage) = $this->writeBankAmountExtraFields($bankLineId, $gross, $fee);
+                if ($fieldsOk) $fieldsOk = $this->setBankInvoiceNumber($bankLineId, $invoiceNumber) && $this->setBankInvoiceExtraField($bankLineId, $invoiceNumber);
+                if (!$fieldsOk) {
+                    $this->db->rollback();
+                    $msg = 'Could not write bank-entry custom fields for WooCommerce order #' . $orderNumber . ($fieldsMessage !== '' ? ': ' . $fieldsMessage : '.');
+                    $this->insertLog($order, $bankId, $gross, $fee, 0, 0, 'error', $msg, $dateOrder, $invoiceNumber, $payout);
+                    return array('status' => 'errors', 'message' => $msg);
+                }
+            }
         }
 
         $pdfEcmFilepath = '';
@@ -1568,44 +1577,55 @@ class DolliCommerceHub
 
     private function writeBankAmountExtraFields($bankLineId, $gross, $fee)
     {
-        if ($bankLineId <= 0) return;
+        if ($bankLineId <= 0) return array(false, 'Invalid bank entry.');
         $grossCode = trim((string) $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', ''));
         $feeCode   = trim((string) $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''));
-        if ($grossCode === '' && $feeCode === '') return;
+        if ($grossCode === '' && $feeCode === '') return array(true, '');
+
+        $numericFields = $this->getBankAmountExtraFields();
+        foreach (array('gross' => $grossCode, 'fee' => $feeCode) as $name => $code) {
+            if ($code !== '' && !isset($numericFields[$code])) return array(false, ucfirst($name) . ' mapping is not a numeric bank custom field.');
+        }
+        if ($grossCode !== '' && $grossCode === $feeCode) return array(false, 'Gross and fee mappings point to the same field.');
+        $invoiceCode = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        if ($invoiceCode !== '' && ($grossCode === $invoiceCode || $feeCode === $invoiceCode)) return array(false, 'An amount mapping points to the invoice-number field.');
 
         $table   = MAIN_DB_PREFIX . 'bank_extrafields';
         $columns = $this->getTableColumns($table);
-        if (empty($columns) || !in_array('fk_object', $columns, true)) return;
+        if (empty($columns) || !in_array('fk_object', $columns, true)) return array(false, 'Bank custom-field storage is unavailable.');
 
         $resql = $this->db->query('SELECT rowid FROM ' . $table . ' WHERE fk_object=' . (int) $bankLineId . ' LIMIT 1');
         $existingId = 0;
-        if ($resql && ($obj = $this->db->fetch_object($resql))) $existingId = (int) $obj->rowid;
+        if (!$resql) return array(false, $this->db->lasterror());
+        if ($obj = $this->db->fetch_object($resql)) $existingId = (int) $obj->rowid;
 
         $fields = array();
         if ($grossCode !== '' && in_array($grossCode, $columns, true)) $fields[$grossCode] = price2num($gross, 'MT');
         if ($feeCode !== '' && in_array($feeCode, $columns, true))     $fields[$feeCode]   = price2num($fee, 'MT');
-        if (empty($fields)) return;
+        if (empty($fields)) return array(false, 'Mapped custom-field columns do not exist.');
 
         if ($existingId > 0) {
             $sets = array();
             foreach ($fields as $col => $val) $sets[] = $col . '=' . $val;
-            $this->db->query('UPDATE ' . $table . ' SET ' . implode(',', $sets) . ' WHERE rowid=' . $existingId);
+            $result = $this->db->query('UPDATE ' . $table . ' SET ' . implode(',', $sets) . ' WHERE rowid=' . $existingId);
         } else {
             $cols = array('fk_object');
             $vals = array((string) (int) $bankLineId);
             foreach ($fields as $col => $val) { $cols[] = $col; $vals[] = (string) $val; }
-            $this->db->query('INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $vals) . ')');
+            $result = $this->db->query('INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $vals) . ')');
         }
+        return array((bool) $result, $result ? '' : $this->db->lasterror());
     }
 
     private function setBankInvoiceNumber($bankLineId, $invoiceNumber)
     {
-        if (!$this->nativeInvoiceReferenceEnabled() || empty($invoiceNumber) || $bankLineId <= 0) return;
+        if (!$this->nativeInvoiceReferenceEnabled() || empty($invoiceNumber) || $bankLineId <= 0) return true;
         $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'bank');
         if (in_array('num_chq', $fields, true)) {
             $sql = 'UPDATE ' . MAIN_DB_PREFIX . "bank SET num_chq='" . $this->db->escape((string) $invoiceNumber) . "' WHERE rowid=" . (int) $bankLineId;
-            $this->db->query($sql);
+            return (bool) $this->db->query($sql);
         }
+        return true;
     }
 
     private function nativeInvoiceReferenceEnabled()
@@ -1619,6 +1639,8 @@ class DolliCommerceHub
 
         $code = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
         if ($code === '' || !preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $code)) return false;
+        if (!isset($this->getBankExtraFields()[$code])) return false;
+        if ($code === trim((string) $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', '')) || $code === trim((string) $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''))) return false;
 
         $table = MAIN_DB_PREFIX . 'bank_extrafields';
         $columns = $this->getTableColumns($table);
