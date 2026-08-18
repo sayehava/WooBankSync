@@ -27,6 +27,7 @@ $filters = $report->normalizeFilters(array(
 $warehouses = $inventory->getWarehouses();
 $summary = $report->getSummary($filters);
 $products = $report->getProductRows($filters);
+$inventoryProducts = $report->getInventoryProductRows($filters);
 $warehouseRows = $report->getWarehouseRows($filters);
 $financialRows = $report->getFinancialRows($filters);
 $totals = $report->totals($summary);
@@ -54,6 +55,9 @@ if (GETPOST('action', 'alpha') === 'export') {
     fputcsv($out, array(), ';');
     fputcsv($out, array('Platform', 'Currency', 'Orders', 'Gross sales', 'Provider fees / costs', 'Net payout'), ';');
     foreach ($financialRows as $row) fputcsv($out, array($csv(ucfirst($row['connector'])), $csv($row['currency']), $row['orders'], $row['gross'], $row['fees'], $row['net']), ';');
+    fputcsv($out, array(), ';');
+    fputcsv($out, array('Dolibarr product ref', 'Dolibarr product', 'Platform', 'Orders', 'Units sold directly', 'Units inside bundles', 'Total physical units sold'), ';');
+    foreach ($inventoryProducts as $row) fputcsv($out, array($csv($row['ref']), $csv($row['label']), $csv(ucfirst($row['connector'])), $row['orders'], $row['direct_units'], $row['bundle_units'], $row['total_units']), ';');
     fputcsv($out, array(), ';');
     fputcsv($out, array('Platform', 'SKU', 'Product', 'Type', 'Source', 'Orders', 'Sold items', 'Underlying inventory pieces'), ';');
     foreach ($products as $row) fputcsv($out, array($csv(ucfirst($row['connector'])), $csv($row['sku']), $csv($row['label']), $csv($row['type']), $csv($row['source_origin']), $row['orders'], $row['sold_items'], $row['inventory_pieces']), ';');
@@ -88,6 +92,12 @@ $query = http_build_query(array_merge($filters, array('action' => 'export', 'mai
 <h2>Channel totals</h2>
 <div class="div-table-responsive-no-min"><table class="liste centpercent"><tr class="liste_titre"><th>Channel</th><th class="right">Orders</th><th class="right">Singles</th><th class="right">Bundles</th><th class="right">Total sold</th><th class="right">Inventory pieces</th></tr>
 <?php if (empty($summary)) { ?><tr><td colspan="6" class="opacitymedium">No sales lines are recorded for these filters. Run sync again to populate analytics for already-synced orders.</td></tr><?php } else { foreach ($summary as $row) { ?><tr class="oddeven"><td><strong><?php echo dol_escape_htmltag(ucfirst($row['connector'])); ?></strong></td><td class="right"><?php echo (int) $row['orders']; ?></td><td class="right"><?php echo price($row['single_items']); ?></td><td class="right"><?php echo price($row['bundle_items']); ?></td><td class="right"><?php echo price($row['sold_items']); ?></td><td class="right"><?php echo price($row['inventory_pieces']); ?></td></tr><?php }} ?>
+</table></div>
+
+<h2>Physical Dolibarr items sold</h2>
+<p class="opacitymedium">Bundle recipes are expanded here. Direct units plus units contained in bundles gives the real quantity sold for each Dolibarr stock item, independently of whether its stock backfill has run.</p>
+<div class="div-table-responsive-no-min"><table class="liste centpercent"><tr class="liste_titre"><th>Dolibarr ref</th><th>Product</th><th>Channel</th><th class="right">Orders</th><th class="right">Direct units</th><th class="right">Units in bundles</th><th class="right">Total physical units</th></tr>
+<?php if (empty($inventoryProducts)) { ?><tr><td colspan="7" class="opacitymedium">No mapped product recipes have recorded sales for these filters.</td></tr><?php } else { foreach ($inventoryProducts as $row) { ?><tr class="oddeven"><td><strong><?php echo dol_escape_htmltag($row['ref']); ?></strong></td><td><?php echo dol_escape_htmltag($row['label']); ?></td><td><?php echo dol_escape_htmltag(ucfirst($row['connector'])); ?></td><td class="right"><?php echo (int) $row['orders']; ?></td><td class="right"><?php echo price($row['direct_units']); ?></td><td class="right"><?php echo price($row['bundle_units']); ?></td><td class="right"><strong><?php echo price($row['total_units']); ?></strong></td></tr><?php }} ?>
 </table></div>
 
 <h2>Warehouse × sales channel</h2>
