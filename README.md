@@ -201,7 +201,7 @@ The mapped gross, fee, and invoice display labels can be renamed from the setup 
 
 Configuration shows the number of module-created bank accounts, imported bank entries, indexed documents, and sync-log rows. It also shows Dolibarr's highest and next global bank-entry references. An administrator may set the next reference to any collision-free value at or above the highest remaining `llx_bank.rowid` plus one. This sequence is global to every Bank/Cash entry, not private to this module.
 
-The legacy-menu cleanup removes stale WooBankSync, Commerce Automation Hub, Dolli Commerce Hub, and Dolibarr Commerce Hub menu rows. It runs during activation and database checks and is also available as an explicit button.
+Legacy menu rows are cleaned automatically during module activation and database checks.
 
 ## 🗑️ Desync
 
@@ -224,7 +224,7 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 3. ⚙️ Configure connector credentials, payment mappings, product recipes, and warehouses
 4. 🚀 Test with **Sync now**
 
-If an earlier module title remains in the menu after upgrading, open Configuration and click **Remove stale Dolli Commerce Hub menus**, then reload the page.
+After upgrading, reload Dolibarr after the automatic database check completes.
 
 ---
 
