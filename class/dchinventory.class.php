@@ -306,7 +306,11 @@ class DchInventoryManager
             $result['errors']++;
             $result['messages'][] = '#' . (string) ($order['number'] ?? $order['id'] ?? '') . ': sales analytics ledger could not be updated.';
         }
-        if (!$this->stockEnabled($connector)) return $result;
+        if (!$this->stockEnabled($connector)) {
+            $result['ignored']++;
+            $result['messages'][] = ucfirst($connector) . ': stock deduction is disabled in the connector settings.';
+            return $result;
+        }
 
         $defaultWarehouseId = $this->warehouseId($connector);
         if ($user === null && isset($GLOBALS['user'])) $user = $GLOBALS['user'];
@@ -507,9 +511,10 @@ class DchInventoryManager
             . " AND external_order_id='" . $this->db->escape($orderId) . "'"
             . " AND external_line_id='" . $this->db->escape($lineId) . "'"
             . " AND event_key='sale' AND fk_product=" . (int) $productId;
-        $resql = $this->db->query('SELECT rowid, status FROM ' . $table . ' WHERE ' . $where . ' LIMIT 1');
+        $resql = $this->db->query('SELECT rowid, status, fk_stock_movement FROM ' . $table . ' WHERE ' . $where . ' LIMIT 1');
         $existing = $resql ? $this->db->fetch_object($resql) : null;
         if ($existing && $existing->status === 'applied') return array('status' => 'already', 'message' => '');
+        if ($existing && !empty($existing->fk_stock_movement)) return array('status' => 'errors', 'message' => '#' . $orderNumber . ': native stock movement ' . (int) $existing->fk_stock_movement . ' requires review; no duplicate deduction was made.');
         if ($existing && $existing->status === 'pending') {
             $movementRes = $this->db->query('SELECT rowid FROM ' . MAIN_DB_PREFIX . 'stock_mouvement'
                 . " WHERE inventorycode='" . $this->db->escape($inventoryCode) . "' AND fk_product=" . (int) $productId . ' LIMIT 1');
@@ -545,9 +550,16 @@ class DchInventoryManager
         require_once DOL_DOCUMENT_ROOT . '/product/stock/class/mouvementstock.class.php';
         $movement = new MouvementStock($this->db);
         $destination = 'Sold via ' . ($connector === 'woocommerce' ? 'WooCommerce' : ucfirst($connector));
-        $label = 'Dolli Commerce Hub | ' . $destination . ' | order #' . $orderNumber;
+        $label = 'Commerce Automation Hub | Sale stock correction | ' . $destination . ' | order #' . $orderNumber;
+        $stockBefore = $this->warehouseStock($productId, $warehouseId);
         $movementId = $movement->livraison($user, $productId, $warehouseId, $quantity, 0, substr($label, 0, 255), $dateOrder ?: '', '', '', '', 0, $inventoryCode);
         if ($movementId > 0) {
+            $stockAfter = $this->warehouseStock($productId, $warehouseId);
+            if ($stockBefore !== null && $stockAfter !== null && $stockAfter > $stockBefore - $quantity + 0.0000001) {
+                $error = 'Dolibarr created native movement ' . $movementId . ' but warehouse stock did not decrease by ' . price2num($quantity, 'MU') . '.';
+                $this->db->query("UPDATE $table SET status='failed', fk_stock_movement=" . (int) $movementId . ", error_message='" . $this->db->escape($error) . "' WHERE rowid=" . (int) $rowId);
+                return array('status' => 'errors', 'message' => '#' . $orderNumber . ': ' . $error);
+            }
             $this->db->query("UPDATE $table SET status='applied', fk_stock_movement=" . (int) $movementId . ", external_order_number='" . $this->db->escape($orderNumber) . "', destination='" . $this->db->escape($destination) . "', error_message=NULL WHERE rowid=" . (int) $rowId);
             return array('status' => 'applied', 'message' => '');
         }
@@ -555,6 +567,14 @@ class DchInventoryManager
         $error = !empty($movement->error) ? $movement->error : (!empty($movement->errors) ? implode('; ', $movement->errors) : 'Dolibarr rejected the stock movement.');
         $this->db->query("UPDATE $table SET status='failed', error_message='" . $this->db->escape($error) . "' WHERE rowid=" . (int) $rowId);
         return array('status' => 'errors', 'message' => '#' . $orderNumber . ': stock deduction failed for product ' . $productId . ': ' . $error);
+    }
+
+    private function warehouseStock($productId, $warehouseId)
+    {
+        $resql = $this->db->query('SELECT reel FROM ' . MAIN_DB_PREFIX . 'product_stock WHERE fk_product=' . (int) $productId . ' AND fk_entrepot=' . (int) $warehouseId . ' LIMIT 1');
+        if (!$resql) return null;
+        $row = $this->db->fetch_object($resql);
+        return $row ? (float) $row->reel : 0.0;
     }
 
     private function fetchCatalogById($catalogId)
