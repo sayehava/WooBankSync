@@ -184,6 +184,12 @@ if ($action === 'refresh_woo_catalog') {
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
+if ($action === 'backfill_woo_stock') {
+    @set_time_limit(600);
+    list($ok, $msg) = $sync->backfillWooStock();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
 if ($action === 'refresh_amazon_catalog') {
     @set_time_limit(600);
     list($ok, $msg) = $sync->refreshAmazonCatalog();
@@ -587,7 +593,11 @@ foreach ($batchFields as $key => $settings) {
 <form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>" style="display:inline-block;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="autosetup">
 <input class="button" type="submit" value="Yes, create virtual bank accounts and map listed gateways">
-</form><br><br>
+</form>
+<form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>" style="display:inline-block;margin-left:8px;" onsubmit="return confirm('Apply mapped product and bundle recipes to all recorded WooCommerce sales? Existing movement IDs prevent duplicate deductions.');">
+<input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="backfill_woo_stock">
+<input class="button" type="submit" value="Apply mapped stock to already synced orders">
+</form><br><span class="opacitymedium">Enable stock deduction above first. This action is safe to repeat and reports unmapped or failed lines.</span><br><br>
 <?php
 
 $gateways = $sync->getJsonConst('WBS_GATEWAYS_JSON', array());
