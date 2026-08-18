@@ -5,13 +5,13 @@ if (!defined('MAIN_DB_PREFIX')) die('Access denied');
 require_once __DIR__ . '/../class/wbsgermanizedclient.class.php';
 
 /**
- * WooBankSync integration for WooCommerce Germanized / Germanized Pro.
+ * Commerce Automation Hub integration for WooCommerce Germanized / Germanized Pro.
  *
  * Provides:
  *  - Invoice number extraction from order meta and Germanized document endpoints.
  *  - PDF download via StoreaBill API (/wp-json/sab/v1/) with URL fallback.
  *  - ECM folder and file management for saved PDFs.
- *  - Settings UI tab in WooBankSync Setup.
+ *  - Settings UI section in Commerce Automation Hub setup.
  *
  * This integration is completely optional. If Germanized is not installed on
  * the WooCommerce site, isDetected() returns false and nothing here runs.
@@ -21,7 +21,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     private $db;
     private $conf;
 
-    /** Shared with WooBankSync::$pdfLog — populated during PDF fetch. */
+    /** Shared with CommerceAutomationHub::$pdfLog; populated during PDF fetch. */
     public $pdfLog = array();
     /** Set during StoreaBill fetch when the SAB response includes an invoice number. */
     public $lastSabInvoiceNumber = '';
@@ -729,9 +729,9 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $this->addDataIfColumn($data, $fields, 'fk_user_c', $userId, true);
         $this->addDataIfColumn($data, $fields, 'date_c', $this->sqlDateNow(), false);
         $this->addDataIfColumn($data, $fields, 'description', "'" . $this->db->escape('WooCommerce order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
-        $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('woobanksync woo ' . $orderId) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('commerceautomationhub woo ' . $orderId) . "'", false);
         $this->addDataIfColumn($data, $fields, 'gen_or_uploaded', "'generated'", false);
-        $this->addDataIfColumn($data, $fields, 'src_object_type', "'woobanksync'", false);
+        $this->addDataIfColumn($data, $fields, 'src_object_type', "'commerceautomationhub'", false);
         $this->addDataIfColumn($data, $fields, 'src_object_id', (int) $orderId, true);
         $this->addDataIfColumn($data, $fields, 'position', 0, true);
         if (empty($data)) return false;
@@ -1098,7 +1098,7 @@ function wbsGzdTestPdf(){
 </div><?php // wbsGzdExtra
     }
 
-    // ── Private utilities (duplicated from WooBankSync for self-containment) ──
+    // Private utilities duplicated from the main service for self-containment.
 
     private function getConst($name, $default = '')
     {

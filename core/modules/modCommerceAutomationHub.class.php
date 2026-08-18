@@ -1,11 +1,11 @@
 <?php
 /* Copyright (C) 2026 Sayeh Ava Pazouki
- * Dolibarr module descriptor for Dolli Commerce Hub.
+ * Dolibarr module descriptor for Commerce Automation Hub.
  */
 
 include_once DOL_DOCUMENT_ROOT . '/core/modules/DolibarrModules.class.php';
 
-class modWooBankSync extends DolibarrModules
+class modCommerceAutomationHub extends DolibarrModules
 {
     public function __construct($db)
     {
@@ -13,14 +13,14 @@ class modWooBankSync extends DolibarrModules
 
         $this->db = $db;
         $this->numero = 104357;
-        $this->rights_class = 'woobanksync';
+        $this->rights_class = 'commerceautomationhub';
         $this->family = 'financial';
         $this->module_position = 500;
         $this->name = preg_replace('/^mod/i', '', get_class($this));
-        $this->description = 'Synchronize multichannel orders, payments, bundles and stock with Dolibarr.';
-        $this->descriptionlong = 'Dolli Commerce Hub connects WooCommerce, Amazon Seller and SumUp to shared Dolibarr payment reconciliation, product mapping, bundle recipes and inventory movements.';
+        $this->description = 'Automate commerce, payment, document and stock flows with Dolibarr.';
+        $this->descriptionlong = 'Commerce Automation Hub bridges sales channels and payment providers such as WooCommerce, Amazon Seller, Stripe and SumUp with Dolibarr money movements, documents, product mappings and inventory.';
         $this->editor_name = 'TASG / Sayeh Ava Pazouki';
-        $this->version = '2.2.1';
+        $this->version = '3.0.0';
         $this->const_name = 'MAIN_MODULE_' . strtoupper($this->name);
         $this->picto = 'bank';
         $this->module_parts = array(
@@ -28,13 +28,13 @@ class modWooBankSync extends DolibarrModules
             'hooks' => array(),
             'cron' => 1,
         );
-        $this->dirs = array('/woobanksync/temp');
-        $this->config_page_url = array('setup.php@woobanksync');
+        $this->dirs = array('/commerceautomationhub/temp');
+        $this->config_page_url = array('setup.php@commerceautomationhub');
         $this->hidden = false;
         $this->depends = array('modBanque');
         $this->requiredby = array();
         $this->conflictwith = array();
-        $this->langfiles = array('woobanksync@woobanksync');
+        $this->langfiles = array('commerceautomationhub@commerceautomationhub');
         $this->phpmin = array(7, 4);
         $this->need_dolibarr_version = array(16, 0);
 
@@ -103,55 +103,55 @@ class modWooBankSync extends DolibarrModules
         $this->menu[$r++] = array(
             'fk_menu' => '0',
             'type' => 'top',
-            'titre' => 'Dolli Commerce Hub',
-            'mainmenu' => 'woobanksync',
+            'titre' => 'Commerce Automation Hub',
+            'mainmenu' => 'commerceautomationhub',
             'leftmenu' => '',
-            'url' => '/custom/woobanksync/index.php?mainmenu=woobanksync',
-            'langs' => 'woobanksync@woobanksync',
+            'url' => '/custom/commerceautomationhub/index.php?mainmenu=commerceautomationhub',
+            'langs' => 'commerceautomationhub@commerceautomationhub',
             'position' => 1000,
-            'enabled' => '$conf->woobanksync->enabled',
-            'perms' => '$user->hasRight("woobanksync", "read") || $user->admin',
+            'enabled' => '$conf->commerceautomationhub->enabled',
+            'perms' => '$user->hasRight("commerceautomationhub", "read") || $user->admin',
             'target' => '',
             'user' => 2,
         );
         $this->menu[$r++] = array(
-            'fk_menu' => 'fk_mainmenu=woobanksync',
+            'fk_menu' => 'fk_mainmenu=commerceautomationhub',
             'type' => 'left',
             'titre' => 'Dashboard',
-            'mainmenu' => 'woobanksync',
-            'leftmenu' => 'woobanksync_dashboard',
-            'url' => '/custom/woobanksync/index.php?mainmenu=woobanksync',
-            'langs' => 'woobanksync@woobanksync',
+            'mainmenu' => 'commerceautomationhub',
+            'leftmenu' => 'commerceautomationhub_dashboard',
+            'url' => '/custom/commerceautomationhub/index.php?mainmenu=commerceautomationhub',
+            'langs' => 'commerceautomationhub@commerceautomationhub',
             'position' => 100,
-            'enabled' => '$conf->woobanksync->enabled',
-            'perms' => '$user->hasRight("woobanksync", "read") || $user->admin',
+            'enabled' => '$conf->commerceautomationhub->enabled',
+            'perms' => '$user->hasRight("commerceautomationhub", "read") || $user->admin',
             'target' => '',
             'user' => 2,
         );
         $this->menu[$r++] = array(
-            'fk_menu' => 'fk_mainmenu=woobanksync',
+            'fk_menu' => 'fk_mainmenu=commerceautomationhub',
             'type' => 'left',
             'titre' => 'Sales analytics',
-            'mainmenu' => 'woobanksync',
-            'leftmenu' => 'woobanksync_reports',
-            'url' => '/custom/woobanksync/reports.php?mainmenu=woobanksync',
-            'langs' => 'woobanksync@woobanksync',
+            'mainmenu' => 'commerceautomationhub',
+            'leftmenu' => 'commerceautomationhub_reports',
+            'url' => '/custom/commerceautomationhub/reports.php?mainmenu=commerceautomationhub',
+            'langs' => 'commerceautomationhub@commerceautomationhub',
             'position' => 101,
-            'enabled' => '$conf->woobanksync->enabled',
-            'perms' => '$user->hasRight("woobanksync", "read") || $user->admin',
+            'enabled' => '$conf->commerceautomationhub->enabled',
+            'perms' => '$user->hasRight("commerceautomationhub", "read") || $user->admin',
             'target' => '',
             'user' => 2,
         );
         $this->menu[$r++] = array(
-            'fk_menu' => 'fk_mainmenu=woobanksync',
+            'fk_menu' => 'fk_mainmenu=commerceautomationhub',
             'type' => 'left',
             'titre' => 'Configuration',
-            'mainmenu' => 'woobanksync',
-            'leftmenu' => 'woobanksync_setup',
-            'url' => '/custom/woobanksync/admin/setup.php?mainmenu=woobanksync',
-            'langs' => 'woobanksync@woobanksync',
+            'mainmenu' => 'commerceautomationhub',
+            'leftmenu' => 'commerceautomationhub_setup',
+            'url' => '/custom/commerceautomationhub/admin/setup.php?mainmenu=commerceautomationhub',
+            'langs' => 'commerceautomationhub@commerceautomationhub',
             'position' => 102,
-            'enabled' => '$conf->woobanksync->enabled',
+            'enabled' => '$conf->commerceautomationhub->enabled',
             'perms' => '$user->admin',
             'target' => '',
             'user' => 2,
@@ -159,31 +159,31 @@ class modWooBankSync extends DolibarrModules
 
         $this->rights = array();
         $this->rights[0][0] = 1043571;
-        $this->rights[0][1] = 'Read Dolli Commerce Hub';
+        $this->rights[0][1] = 'Read Commerce Automation Hub';
         $this->rights[0][4] = 'read';
         $this->rights[0][5] = 'read';
         $this->rights[0][6] = 1;
         $this->rights[1][0] = 1043572;
-        $this->rights[1][1] = 'Run Dolli Commerce Hub synchronizations';
+        $this->rights[1][1] = 'Run Commerce Automation Hub synchronizations';
         $this->rights[1][4] = 'run';
         $this->rights[1][5] = 'run';
         $this->rights[1][6] = 0;
 
         $this->cronjobs = array(
             array(
-                'label' => 'Dolli Commerce Hub: enabled channel sync',
+                'label' => 'Commerce Automation Hub: enabled channel sync',
                 'jobtype' => 'command',
                 'class' => '',
                 'objectname' => '',
                 'method' => '',
                 'parameters' => '',
-                'comment' => 'Synchronize enabled Dolli Commerce Hub sales channels',
+                'comment' => 'Synchronize enabled Commerce Automation Hub sales channels',
                 'frequency' => 3600,
                 'unitfrequency' => 3600,
                 'status' => 0,
-                'test' => '$conf->woobanksync->enabled',
+                'test' => '$conf->commerceautomationhub->enabled',
                 'priority' => 50,
-                'command' => DOL_DOCUMENT_ROOT . '/custom/woobanksync/scripts/sync.php',
+                'command' => DOL_DOCUMENT_ROOT . '/custom/commerceautomationhub/scripts/sync.php',
             ),
         );
     }
@@ -191,11 +191,10 @@ class modWooBankSync extends DolibarrModules
     public function init($options = '')
     {
         $sql = array();
-        // Pre-2.2 used a left menu under Bank/Cash. Because that menu is no
-        // longer present in this descriptor, Dolibarr's standard cleanup may
-        // not recognize the old stored row during an upgrade.
-        $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . "menu WHERE url LIKE '%/custom/woobanksync/index.php%' AND (mainmenu='bank' OR leftmenu='woobanksync')");
-        $result = $this->_load_tables('/woobanksync/sql/');
+        // Remove menu rows left by the former module identity during reactivation.
+        $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . "menu WHERE mainmenu='woobanksync' OR leftmenu LIKE 'woobanksync%' OR url LIKE '%/custom/woobanksync/%'");
+        $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . "menu WHERE url LIKE '%/custom/commerceautomationhub/index.php%' AND (mainmenu='bank' OR leftmenu='commerceautomationhub')");
+        $result = $this->_load_tables('/commerceautomationhub/sql/');
         return $this->_init($sql, $options);
     }
 

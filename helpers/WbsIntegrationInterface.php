@@ -3,7 +3,7 @@
 if (!defined('MAIN_DB_PREFIX')) die('Access denied');
 
 /**
- * Contract that every WooBankSync integration must implement.
+ * Contract that every Commerce Automation Hub integration must implement.
  *
  * An "integration" is an optional, self-contained plugin that extends the sync
  * with data from a third-party WordPress plugin (e.g. Germanized Pro, WCPDF).
@@ -46,7 +46,7 @@ interface WbsIntegrationInterface
 
     /**
      * Attempt to download and store the invoice PDF for a synced order.
-     * $sync is the WooBankSync instance — call its public utilities as needed.
+     * $sync is the Commerce Automation Hub instance; call its public utilities as needed.
      * Return array{ok:bool, already:bool, filepath:string, log:string[]}.
      * Return ['ok'=>false,...] immediately if this integration does not handle PDFs
      * or if PDF download is disabled in its own settings.
@@ -57,7 +57,7 @@ interface WbsIntegrationInterface
      * Enrich order data from integration-specific endpoints during cache refresh.
      * Called once per order in refreshFullCacheBatch().
      * Return array{invoice_number:string, pdf_url:string} (empty strings = no data).
-     * $sync is the WooBankSync instance for reading constants.
+     * $sync is the Commerce Automation Hub instance for reading constants.
      */
     public function enrichCacheOrder(array $order, $sync);
 

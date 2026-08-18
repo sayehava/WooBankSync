@@ -60,10 +60,10 @@ if (!$res && file_exists('../main.inc.php')) $res = @include '../main.inc.php';
 if (!$res && file_exists('../../main.inc.php')) $res = @include '../../main.inc.php';
 if (!$res) die('Include of main fails');
 
-require_once __DIR__ . '/class/woobanksync.class.php';
+require_once __DIR__ . '/class/commerceautomationhub.class.php';
 
-$langs->loadLangs(array('banks', 'woobanksync@woobanksync'));
-if (!$user->hasRight('woobanksync', 'read') && !$user->admin) {
+$langs->loadLangs(array('banks', 'commerceautomationhub@commerceautomationhub'));
+if (!$user->hasRight('commerceautomationhub', 'read') && !$user->admin) {
     if ($wbsIsAjaxRequest) wbs_json_response(array('ok' => false, 'error' => 'Access denied. Reload the page and sign in again.'), 403);
     accessforbidden();
 }
@@ -81,12 +81,12 @@ if ($wbsIsAjaxRequest) {
 
         // ── AJAX: return list of orders that have a PDF URL but no local ECM file ──
         if ($action === 'pending_pdfs') {
-            $sync = new DolliCommerceHub($db, $conf, $langs);
+            $sync = new CommerceAutomationHub($db, $conf, $langs);
             $force = (GETPOST('force', 'alphanohtml') === '1');
             wbs_json_response(array('ok' => true, 'orders' => $sync->getPendingPdfOrders($force)));
         }
 
-        if (!$user->hasRight('woobanksync', 'run') && !$user->admin) {
+        if (!$user->hasRight('commerceautomationhub', 'run') && !$user->admin) {
             wbs_json_response(array('ok' => false, 'error' => 'Access denied. Reload the page and sign in again.'), 403);
         }
 
@@ -95,7 +95,7 @@ if ($wbsIsAjaxRequest) {
             $page = max(1, (int) GETPOST('page', 'int'));
             $batchSize = max(1, min(100, (int) ($conf->global->WBS_SYNC_BATCH_SIZE ?? 10)));
             @set_time_limit(300);
-            $sync = new DolliCommerceHub($db, $conf, $langs);
+            $sync = new CommerceAutomationHub($db, $conf, $langs);
             wbs_json_response(array(
                 'ok' => true,
                 'page' => $page,
@@ -109,7 +109,7 @@ if ($wbsIsAjaxRequest) {
             $cursor = (string) GETPOST('cursor', 'restricthtml');
             $batchSize = max(1, min(100, (int) ($conf->global->WBS_SYNC_BATCH_SIZE ?? 10)));
             @set_time_limit(300);
-            $sync = new DolliCommerceHub($db, $conf, $langs);
+            $sync = new CommerceAutomationHub($db, $conf, $langs);
             list($schemaOk, $schemaMessage) = $sync->runDatabaseChecks();
             if (!$schemaOk) wbs_json_response(array('ok' => false, 'error' => $schemaMessage), 500);
             wbs_json_response(array(
@@ -121,7 +121,7 @@ if ($wbsIsAjaxRequest) {
 
         // ── AJAX: list orders eligible for difference checking ──
         if ($action === 'difference_list') {
-            $sync = new DolliCommerceHub($db, $conf, $langs);
+            $sync = new CommerceAutomationHub($db, $conf, $langs);
             wbs_json_response(array(
                 'ok' => true,
                 'orders' => $sync->getDifferenceCheckOrders(),
@@ -138,7 +138,7 @@ if ($wbsIsAjaxRequest) {
             if (empty($orderIds)) wbs_json_response(array('ok' => false, 'error' => 'No order IDs supplied'), 400);
             $forceDiff = (GETPOST('force', 'alphanohtml') === '1');
             @set_time_limit(300);
-            $sync = new DolliCommerceHub($db, $conf, $langs);
+            $sync = new CommerceAutomationHub($db, $conf, $langs);
             wbs_json_response(array('ok' => true, 'result' => $sync->resyncDifferences($orderIds, $forceDiff)));
         }
 
@@ -147,7 +147,7 @@ if ($wbsIsAjaxRequest) {
             $wooOrderId = GETPOST('woo_order_id', 'alphanohtml');
             if (empty($wooOrderId)) wbs_json_response(array('ok' => false, 'error' => 'Missing order ID'), 400);
             $force = (GETPOST('force', 'alphanohtml') === '1');
-            $sync = new DolliCommerceHub($db, $conf, $langs);
+            $sync = new CommerceAutomationHub($db, $conf, $langs);
 
             // Fetch order info from log (always reliable — no cache dependency).
             $sqlLog = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
@@ -177,7 +177,7 @@ if ($wbsIsAjaxRequest) {
 }
 
 // Clicking a stale pre-2.2 Bank/Cash link also repairs it immediately.
-$_dchMenuMigration = new DolliCommerceHub($db, $conf, $langs);
+$_dchMenuMigration = new CommerceAutomationHub($db, $conf, $langs);
 list($_dchMenuOk, $_dchMenuMessage) = $_dchMenuMigration->cleanupLegacyBankMenu();
 if (!$_dchMenuOk) setEventMessages($_dchMenuMessage, null, 'errors');
 
@@ -185,14 +185,14 @@ require_once __DIR__ . '/helpers/WbsIntegrationManager.php';
 $_wbsManager = new WbsIntegrationManager($db, $conf);
 $hasPdfIntegration = !empty($_wbsManager->getDetected());
 
-llxHeader('', 'Dolli Commerce Hub dashboard');
+llxHeader('', 'Commerce Automation Hub dashboard');
 ?>
-<?php echo load_fiche_titre('Dolli Commerce Hub dashboard', '<a href="admin/setup.php?mainmenu=woobanksync">Configuration</a>', 'generic'); ?>
+<?php echo load_fiche_titre('Commerce Automation Hub dashboard', '<a href="admin/setup.php?mainmenu=commerceautomationhub">Configuration</a>', 'generic'); ?>
 
 <?php if (!isset($conf->global->DCH_WOOCOMMERCE_ENABLED) || !empty($conf->global->DCH_WOOCOMMERCE_ENABLED)): ?><button class="button" type="button" onclick="wbsOpenSyncModal('woocommerce','WooCommerce')" style="margin-right:6px;">Sync WooCommerce</button><?php endif; ?>
 <?php if (!empty($conf->global->DCH_AMAZON_ENABLED)): ?><button class="button" type="button" onclick="wbsOpenSyncModal('amazon','Amazon')" style="margin-right:6px;">Sync Amazon</button><?php endif; ?>
 <?php if (!empty($conf->global->DCH_SUMUP_ENABLED)): ?><button class="button" type="button" onclick="wbsOpenSyncModal('sumup','SumUp')" style="margin-right:6px;">Sync SumUp</button><?php endif; ?>
-<a class="button" href="<?php echo DOL_URL_ROOT; ?>/custom/woobanksync/reports.php?mainmenu=woobanksync" style="margin-right:6px;">Sales analytics</a>
+<a class="button" href="<?php echo DOL_URL_ROOT; ?>/custom/commerceautomationhub/reports.php?mainmenu=commerceautomationhub" style="margin-right:6px;">Sales analytics</a>
 <?php if (!isset($conf->global->DCH_WOOCOMMERCE_ENABLED) || !empty($conf->global->DCH_WOOCOMMERCE_ENABLED)): ?>
 <button class="button" type="button" onclick="wbsOpenDifferenceModal()" style="margin-right:4px;" title="Checks synced orders in configured batches and updates changed reconciliation fields.">Check &amp; update differences</button>
 <label title="Force-update all bank entries even if no change is detected (re-writes labels and amounts)" style="cursor:pointer;margin-right:10px;font-size:0.9em;vertical-align:middle;"><input type="checkbox" id="wbsForceDiff" style="vertical-align:middle;margin-right:3px;">Force update all</label>

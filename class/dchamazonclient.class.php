@@ -205,7 +205,7 @@ class DchAmazonClient
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
         curl_setopt($ch, CURLOPT_TIMEOUT, 90);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json', 'x-amz-access-token: ' . $this->accessToken));
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Dolli-Commerce-Hub/2.2');
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Commerce-Automation-Hub/3.0');
         $body = curl_exec($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);

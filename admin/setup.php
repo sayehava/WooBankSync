@@ -7,10 +7,10 @@ if (!$res) die('Include of main fails');
 require_once DOL_DOCUMENT_ROOT . '/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT . '/core/lib/bank.lib.php';
 require_once DOL_DOCUMENT_ROOT . '/compta/bank/class/account.class.php';
-require_once __DIR__ . '/../class/woobanksync.class.php';
+require_once __DIR__ . '/../class/commerceautomationhub.class.php';
 require_once __DIR__ . '/../helpers/WbsIntegrationManager.php';
 
-$langs->loadLangs(array('admin', 'banks', 'ecm', 'woobanksync@woobanksync'));
+$langs->loadLangs(array('admin', 'banks', 'ecm', 'commerceautomationhub@commerceautomationhub'));
 if (!$user->admin) accessforbidden();
 
 if (!function_exists('wbs_set_const_safe')) {
@@ -40,7 +40,7 @@ if (!function_exists('wbs_set_const_safe')) {
 }
 
 $action = GETPOST('action', 'aZ09');
-$sync = new DolliCommerceHub($db, $conf, $langs);
+$sync = new CommerceAutomationHub($db, $conf, $langs);
 list($autoSchemaOk, $autoSchemaMessage) = $sync->runDatabaseChecks(); // Safe, idempotent lazy migration for uploaded upgrades.
 if (!$autoSchemaOk) setEventMessages($autoSchemaMessage, null, 'errors');
 $manager = new WbsIntegrationManager($db, $conf);
@@ -420,10 +420,10 @@ if ($action === 'desync_ajax') {
     exit;
 }
 
-llxHeader('', $langs->trans('WooBankSyncSetup'));
+llxHeader('', $langs->trans('CommerceAutomationHubSetup'));
 $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_values=1">' . $langs->trans('BackToModuleList') . '</a>';
 ?>
-<?php echo load_fiche_titre($langs->trans('WooBankSyncSetup'), $linkback, 'title_setup'); ?>
+<?php echo load_fiche_titre($langs->trans('CommerceAutomationHubSetup'), $linkback, 'title_setup'); ?>
 <?php
 
 ?>
@@ -433,7 +433,7 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
 <input class="button" type="submit" value="Run/update database checks without disabling module">
 </form>
  &nbsp; <button class="button" type="button" onclick="wbsSetupOpenLogModal()">View sync log</button>
- &nbsp; <a class="button" href="<?php echo DOL_URL_ROOT; ?>/custom/woobanksync/reports.php?mainmenu=woobanksync">Sales analytics</a>
+ &nbsp; <a class="button" href="<?php echo DOL_URL_ROOT; ?>/custom/commerceautomationhub/reports.php?mainmenu=commerceautomationhub">Sales analytics</a>
 </div>
     <!-- Log viewer modal -->
 <div id="wbsLogModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
@@ -494,14 +494,14 @@ $dchWooSetupAction = $_SERVER['PHP_SELF'] . '?connector_view=woocommerce';
     <p><label>Region <select class="flat" name="region"><?php foreach (array('eu' => 'Europe', 'na' => 'North America', 'fe' => 'Far East') as $value => $label) { ?><option value="<?php echo $value; ?>"<?php echo ($conf->global->DCH_AMAZON_REGION ?? 'eu') === $value ? ' selected' : ''; ?>><?php echo $label; ?></option><?php } ?></select></label></p>
     <p><label>Sync from date<br><input class="flat" type="date" name="sync_from_date" value="<?php echo dol_escape_htmltag($conf->global->DCH_AMAZON_SYNC_FROM_DATE ?? ''); ?>"></label></p>
     <p><label><input type="checkbox" name="finance_enabled" value="1"<?php echo !isset($conf->global->DCH_AMAZON_FINANCE_ENABLED) || !empty($conf->global->DCH_AMAZON_FINANCE_ENABLED) ? ' checked' : ''; ?>> Retrieve exact Amazon expenses and net proceeds through Finances API</label></p>
-    <div class="info">Amazon generates its own invoices. With the current API roles, Dolli Commerce Hub does not request or download Amazon invoice PDFs; the invoice remains available in Amazon Seller Central.</div>
+    <div class="info">Amazon generates its own invoices. With the current API roles, Commerce Automation Hub does not request or download Amazon invoice PDFs; the invoice remains available in Amazon Seller Central.</div>
   <?php } elseif ($dchSelectedConnector === 'sumup') { ?>
     <p><label>Access token<br><input class="flat minwidth500" type="password" name="access_token" placeholder="Leave blank to keep saved token"></label></p>
     <p><label>Merchant code<br><input class="flat minwidth500" name="merchant_code" value="<?php echo dol_escape_htmltag($conf->global->DCH_SUMUP_MERCHANT_CODE ?? ''); ?>"></label></p>
     <p><label>Sync from date<br><input class="flat" type="date" name="sync_from_date" value="<?php echo dol_escape_htmltag($conf->global->DCH_SUMUP_SYNC_FROM_DATE ?? ''); ?>"></label></p>
-    <div class="warning" style="margin:10px 0;"><strong>Existing Dolibarr POS + SumUp module:</strong> when that module already creates the sale, payment and stock movement, enable duplicate protection here. The transaction is still counted in sales analytics, but Dolli Commerce Hub will not create a second bank or stock entry.</div>
+    <div class="warning" style="margin:10px 0;"><strong>Existing Dolibarr POS + SumUp module:</strong> when that module already creates the sale, payment and stock movement, enable duplicate protection here. The transaction is still counted in sales analytics, but Commerce Automation Hub will not create a second bank or stock entry.</div>
     <?php $dchPosMode = (string) ($conf->global->DCH_SUMUP_POS_DUPLICATE_MODE ?? 'off'); ?>
-    <p><label>POS duplicate protection<br><select class="flat minwidth300" name="pos_duplicate_mode"><option value="off"<?php echo $dchPosMode === 'off' ? ' selected' : ''; ?>>Off — Dolli Commerce Hub owns SumUp imports</option><option value="all"<?php echo $dchPosMode === 'all' ? ' selected' : ''; ?>>Skip all — Dolibarr POS module owns all SumUp sales</option><option value="reference"<?php echo $dchPosMode === 'reference' ? ' selected' : ''; ?>>Skip only matching POS references</option></select></label></p>
+    <p><label>POS duplicate protection<br><select class="flat minwidth300" name="pos_duplicate_mode"><option value="off"<?php echo $dchPosMode === 'off' ? ' selected' : ''; ?>>Off — Commerce Automation Hub owns SumUp imports</option><option value="all"<?php echo $dchPosMode === 'all' ? ' selected' : ''; ?>>Skip all — Dolibarr POS module owns all SumUp sales</option><option value="reference"<?php echo $dchPosMode === 'reference' ? ' selected' : ''; ?>>Skip only matching POS references</option></select></label></p>
     <p><label>POS reference prefixes <span class="opacitymedium">(comma-separated; reference mode only)</span><br><input class="flat minwidth500" name="pos_reference_prefixes" value="<?php echo dol_escape_htmltag($conf->global->DCH_SUMUP_POS_REFERENCE_PREFIXES ?? ''); ?>" placeholder="POS-, TAKEPOS-, DOLIBARR-"></label></p>
     <div class="info">SumUp receipts remain in SumUp. No SumUp receipt/invoice PDF download is attempted.</div>
   <?php } ?>
@@ -848,7 +848,7 @@ Also stores the full WooCommerce JSON for use with the viewer below. Use a limit
 
 <script>
 var _wbsSetupAjaxUrl = <?php echo json_encode($_SERVER['PHP_SELF']); ?>;
-var _wbsIndexAjaxUrl = <?php echo json_encode(DOL_URL_ROOT . '/custom/woobanksync/index.php'); ?>;
+var _wbsIndexAjaxUrl = <?php echo json_encode(DOL_URL_ROOT . '/custom/commerceautomationhub/index.php'); ?>;
 var _wbsSetupToken = <?php echo json_encode(newToken()); ?>;
 var _wbsSetupCacheOrders = [], _wbsSetupCacheIdx = 0, _wbsSetupCacheBatch = 10;
 var _wbsSetupCacheUpdated = 0, _wbsSetupCacheErrors = 0;
@@ -1101,7 +1101,7 @@ wbsShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
             ⚠️ Desync: delete synced bank entries, PDFs and reset log
         </button>
         <br><span class="opacitymedium">
-            Deletes bank lines stored in the Dolli Commerce Hub log, downloaded WooCommerce PDF files, and clears the financial sync log.
+            Deletes bank lines stored in the Commerce Automation Hub log, downloaded WooCommerce PDF files, and clears the financial sync log.
             It does not touch channel orders, manually-created Dolibarr entries, or stock movements.
         </span>
     </td></tr>
@@ -1117,9 +1117,9 @@ wbsShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
         <div id="wbsDesyncConfirmStep" style="padding:18px 20px;">
             <p style="margin:0 0 12px;">This will permanently delete:</p>
             <ul style="margin:0 0 16px;padding-left:20px;line-height:1.8;">
-                <li>All Dolibarr bank lines created by Dolli Commerce Hub</li>
+                <li>All Dolibarr bank lines created by Commerce Automation Hub</li>
                 <li>All invoice PDF files downloaded to Dolibarr ECM</li>
-                <li>All Dolli Commerce Hub financial sync log entries</li>
+                <li>All Commerce Automation Hub financial sync log entries</li>
                 <li>All WooCommerce order cache entries</li>
             </ul>
             <p style="margin:0 0 16px;color:#555;">Channel orders, stock movements, bundle recipes, and manually-created Dolibarr entries are <strong>not</strong> affected.</p>

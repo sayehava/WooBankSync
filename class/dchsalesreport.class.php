@@ -1,6 +1,6 @@
 <?php
 
-/** Read-only sales and provider-cost analytics for Dolli Commerce Hub. */
+/** Read-only sales and provider-cost analytics for Commerce Automation Hub. */
 class DchSalesReport
 {
     private $db;

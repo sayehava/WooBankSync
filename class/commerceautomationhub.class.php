@@ -2,7 +2,7 @@
 
 require_once __DIR__ . '/woocommerceclient.class.php';
 
-class DolliCommerceHub
+class CommerceAutomationHub
 {
     private $db;
     private $conf;
@@ -917,7 +917,7 @@ class DolliCommerceHub
                 if (!empty($obj->dolibarr_bank_account_id)) $bankAccountIds[] = (int) $obj->dolibarr_bank_account_id;
             }
         } else {
-            return array(false, 'Could not read Dolli Commerce Hub log: ' . $this->db->lasterror());
+            return array(false, 'Could not read Commerce Automation Hub log: ' . $this->db->lasterror());
         }
 
         // 2) Also include mapped virtual bank accounts so older rows whose ids were not logged can be found safely.
@@ -927,7 +927,7 @@ class DolliCommerceHub
         }
         $bankAccountIds = array_values(array_unique(array_filter($bankAccountIds)));
 
-        // 3) Fallback for older module versions: find rows created by WooBankSync by label pattern.
+        // 3) Fallback for older module versions: find rows by their legacy label pattern.
         // This is intentionally conservative, so manually-created unrelated bank entries are not touched.
         $where = array();
         $where[] = "label LIKE '" . $this->db->escape('WOO - #%') . "'";
@@ -1040,7 +1040,7 @@ class DolliCommerceHub
         $deletedLogs = $this->countRows($table, 'entity=' . (int) $this->conf->entity);
         if (!$this->db->query('DELETE FROM ' . $table . ' WHERE entity=' . (int) $this->conf->entity)) {
             $this->db->rollback();
-            return array(false, 'Could not clear Dolli Commerce Hub log: ' . $this->db->lasterror());
+            return array(false, 'Could not clear Commerce Automation Hub log: ' . $this->db->lasterror());
         }
         $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'woobanksync_order_cache WHERE entity=' . (int) $this->conf->entity);
         $this->db->commit();
@@ -1185,7 +1185,7 @@ class DolliCommerceHub
         $where = "url LIKE '%/custom/woobanksync/index.php%' AND (" . implode(' OR ', $signature) . ')';
         if (in_array('entity', $columns, true)) $where .= ' AND entity IN (0,' . (int) $this->conf->entity . ')';
         if (!$this->db->query('DELETE FROM ' . $table . ' WHERE ' . $where)) {
-            return array(false, 'Could not remove the legacy Dolli Commerce Hub entry from Bank/Cash: ' . $this->db->lasterror());
+            return array(false, 'Could not remove the legacy Commerce Automation Hub entry from Bank/Cash: ' . $this->db->lasterror());
         }
         return array(true, 'Legacy Bank/Cash menu entry is removed.');
     }
@@ -1277,7 +1277,7 @@ class DolliCommerceHub
                     '24,8',
                     'bank',
                     0, 0, '', '', 1, '', '1',
-                    'Amount field imported from a commerce channel by Dolli Commerce Hub',
+                    'Amount field imported from a commerce channel by Commerce Automation Hub',
                     '', (string) $this->conf->entity, '', '1'
                 );
                 if ($result <= 0) {
@@ -2261,7 +2261,7 @@ class DolliCommerceHub
     /**
      * Read a module constant.
      *
-     * Public because integration hooks receive the Dolli Commerce Hub instance and
+     * Public because integration hooks receive the Commerce Automation Hub instance and
      * use it to read shared WooCommerce/PDF configuration.
      */
     public function getConst($name, $default = '')
@@ -2285,6 +2285,6 @@ class DolliCommerceHub
 }
 
 /** Backward-compatible technical class name for existing integrations/cron data. */
-class WooBankSync extends DolliCommerceHub
+class WooBankSync extends CommerceAutomationHub
 {
 }

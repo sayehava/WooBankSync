@@ -2,7 +2,7 @@
 
 /**
  * Shared catalogue, bundle-recipe and stock-movement service for
- * Dolli Commerce Hub sales-channel connectors.
+ * Commerce Automation Hub sales-channel connectors.
  */
 class DchInventoryManager
 {
