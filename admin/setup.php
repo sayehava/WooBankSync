@@ -297,11 +297,6 @@ if ($action === 'dbcheck') {
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
-if ($action === 'cleanup_legacy_menus') {
-    list($ok, $msg) = $sync->cleanupLegacyMenus();
-    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
-}
-
 if ($action === 'set_bank_sequence') {
     list($ok, $msg) = $sync->setBankEntrySequence(GETPOST('next_bank_reference', 'int'));
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
@@ -1118,7 +1113,6 @@ fahShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
     </form>
     <div class="warning" style="margin-top:8px;">This is the global <code>llx_bank</code> sequence used by every Dolibarr Bank/Cash entry, not only this module. It cannot be set below the highest remaining entry plus one.</div>
   </td></tr>
-  <tr><td>Legacy menu cleanup</td><td><form method="POST" action="<?php echo dol_escape_htmltag($fahSetupAction); ?>" style="display:inline;"><input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="cleanup_legacy_menus"><button class="button" type="submit">Remove stale Dolli Commerce Hub menus</button></form></td></tr>
 </table>
 <!-- Danger zone -->
 <br>
