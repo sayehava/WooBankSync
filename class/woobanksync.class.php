@@ -1336,6 +1336,30 @@ class DolliCommerceHub
         return array($ok, $ok ? 'The invoice-number custom field was created or reused, mapped, and enabled.' : $msg);
     }
 
+    public function repairExistingBankExtraFields()
+    {
+        $sql = 'SELECT bank_line_id_gross, gross_amount, fee_amount, woo_invoice_number FROM ' . MAIN_DB_PREFIX . 'woobanksync_log'
+            . ' WHERE entity=' . (int) $this->conf->entity . $this->logConnectorCondition('woocommerce')
+            . " AND sync_status='synced' AND bank_line_id_gross > 0";
+        $resql = $this->db->query($sql);
+        if (!$resql) return array(false, $this->db->lasterror());
+        $updated = 0;
+        $this->db->begin();
+        while ($obj = $this->db->fetch_object($resql)) {
+            $bankLineId = (int) $obj->bank_line_id_gross;
+            list($ok, $message) = $this->writeBankAmountExtraFields($bankLineId, $obj->gross_amount, $obj->fee_amount);
+            if ($ok) $ok = $this->setBankInvoiceNumber($bankLineId, (string) $obj->woo_invoice_number)
+                && $this->setBankInvoiceExtraField($bankLineId, (string) $obj->woo_invoice_number, true);
+            if (!$ok) {
+                $this->db->rollback();
+                return array(false, 'Repair stopped at bank entry ' . $bankLineId . ($message !== '' ? ': ' . $message : '.'));
+            }
+            $updated++;
+        }
+        $this->db->commit();
+        return array(true, 'Repaired custom fields on ' . $updated . ' existing WooCommerce bank entries.');
+    }
+
     public function saveGatewayMapFromPost()
     {
         $gateways = $this->getJsonConst('WBS_GATEWAYS_JSON', array());
@@ -1654,9 +1678,10 @@ class DolliCommerceHub
         return (int) $this->getConst('WBS_DOCUMENT_SYNC_ENABLED', '0') === 1;
     }
 
-    private function setBankInvoiceExtraField($bankLineId, $invoiceNumber)
+    private function setBankInvoiceExtraField($bankLineId, $invoiceNumber, $allowEmpty = false)
     {
-        if ((int) $this->getConst('WBS_BANK_EXTRAFIELD_ENABLED', '0') !== 1 || empty($invoiceNumber) || $bankLineId <= 0) return true;
+        if ((int) $this->getConst('WBS_BANK_EXTRAFIELD_ENABLED', '0') !== 1 || $bankLineId <= 0) return true;
+        if (!$allowEmpty && empty($invoiceNumber)) return true;
 
         $code = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
         if ($code === '' || !preg_match('/^[a-zA-Z][a-zA-Z0-9_]*$/', $code)) return false;
