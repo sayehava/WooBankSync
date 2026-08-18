@@ -191,6 +191,11 @@ class modFinanceAutomationHub extends DolibarrModules
     public function init($options = '')
     {
         $sql = array();
+        $legacyMenus = "mainmenu IN ('woobanksync','commerceautomationhub','dollicommercehub','dolibarrcommercehub')"
+            . " OR leftmenu LIKE 'woobanksync%' OR leftmenu LIKE 'commerceautomationhub%' OR leftmenu LIKE 'dollicommercehub%' OR leftmenu LIKE 'dolibarrcommercehub%'"
+            . " OR url LIKE '%/custom/woobanksync/%' OR url LIKE '%/custom/commerceautomationhub/%' OR url LIKE '%/custom/dollicommercehub/%' OR url LIKE '%/custom/dolibarrcommercehub/%'"
+            . " OR titre IN ('WooBankSync','Commerce Automation Hub','Dolli Commerce Hub','Dolibarr Commerce Hub')";
+        $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'menu WHERE ' . $legacyMenus);
         $this->_load_tables('/financeautomationhub/sql/');
         return $this->_init($sql, $options);
     }
