@@ -985,6 +985,11 @@ class FinanceAutomationHub
                     }
                     $deletedClasses += $count;
                 }
+                if (!empty($this->getTableColumns(MAIN_DB_PREFIX . 'bank_extrafields'))
+                    && !$this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'bank_extrafields WHERE fk_object IN (' . $ids . ')')) {
+                    $this->db->rollback();
+                    return array(false, 'Could not delete bank custom-field values: ' . $this->db->lasterror());
+                }
 
                 $before = $this->countRows(MAIN_DB_PREFIX . 'bank', 'rowid IN (' . $ids . ')');
                 if (!$this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'bank WHERE rowid IN (' . $ids . ')')) {
