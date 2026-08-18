@@ -456,6 +456,7 @@ $dchConnectorDefinitions = array(
 $dchSelectedConnector = strtolower((string) GETPOST('connector_view', 'alpha'));
 if ($dchSelectedConnector === '') $dchSelectedConnector = strtolower((string) GETPOST('connector', 'alpha'));
 if (!isset($dchConnectorDefinitions[$dchSelectedConnector])) $dchSelectedConnector = '';
+$dchWooSetupAction = $_SERVER['PHP_SELF'] . '?connector_view=woocommerce';
 ?>
 <h2>Sales channel submodules</h2>
 <p class="opacitymedium">This list stays compact as more connectors are added. Activate only the channels you use, then configure one channel at a time.</p>
@@ -521,7 +522,7 @@ if (!isset($dchConnectorDefinitions[$dchSelectedConnector])) $dchSelectedConnect
 <?php } else { ?><div class="info" style="margin-bottom:18px;">Choose <strong>Configure</strong> for a sales channel. The module dashboard is separate and no connector configuration is selected by default.</div><?php } ?>
 
 <?php if ($dchSelectedConnector === 'woocommerce') { ?>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+<form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_api">
 <table class="noborder centpercent">
@@ -549,7 +550,7 @@ foreach ($fields as $key => $label) {
 <div class="center"><input class="button button-save" type="submit" value="Save API settings"></div>
 </form><br>
 
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+<form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_batch_sizes">
 <table class="noborder centpercent">
@@ -573,11 +574,11 @@ foreach ($batchFields as $key => $settings) {
 <div class="center"><input class="button button-save" type="submit" value="Save batch sizes"></div>
 </form><br>
 
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;margin-right:8px;">
+<form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>" style="display:inline-block;margin-right:8px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="refresh">
 <input class="button" type="submit" value="Refresh active and used payment methods from WooCommerce">
 </form>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;">
+<form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>" style="display:inline-block;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="autosetup">
 <input class="button" type="submit" value="Yes, create virtual bank accounts and map listed gateways">
 </form><br><br>
@@ -588,7 +589,7 @@ $metaByGateway = $sync->getJsonConst('WBS_META_KEYS_JSON', array());
 $map = $sync->gatewayMap();
 
 ?>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+<form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="save_map">
 <div style="overflow-x:auto;">
