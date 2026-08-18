@@ -98,6 +98,47 @@ class DchSalesReport
         return $rows;
     }
 
+    public function getInventoryProductRows(array $filters)
+    {
+        $rows = array();
+        $where = $this->salesWhere($filters, 's', false);
+        if ($filters['warehouse_id'] > 0) {
+            $warehouseId = (int) $filters['warehouse_id'];
+            $defaults = array(
+                'woocommerce' => (int) ($this->conf->global->DCH_WOOCOMMERCE_WAREHOUSE_ID ?? 0),
+                'amazon' => (int) ($this->conf->global->DCH_AMAZON_WAREHOUSE_ID ?? 0),
+                'sumup' => (int) ($this->conf->global->DCH_SUMUP_WAREHOUSE_ID ?? 0),
+            );
+            $fallback = "CASE s.connector WHEN 'woocommerce' THEN " . $defaults['woocommerce'] . " WHEN 'amazon' THEN " . $defaults['amazon'] . " WHEN 'sumup' THEN " . $defaults['sumup'] . ' ELSE 0 END';
+            $where .= ' AND COALESCE(NULLIF(bc.fk_warehouse,0),' . $fallback . ')=' . $warehouseId;
+        }
+        $sql = 'SELECT s.connector, p.rowid AS product_id, p.ref, p.label, COUNT(DISTINCT s.external_order_id) AS orders_count,'
+            . ' SUM(CASE WHEN s.is_bundle=0 THEN s.quantity*bc.quantity ELSE 0 END) AS direct_units,'
+            . ' SUM(CASE WHEN s.is_bundle=1 THEN s.quantity*bc.quantity ELSE 0 END) AS bundle_units,'
+            . ' SUM(s.quantity*bc.quantity) AS total_units'
+            . ' FROM ' . MAIN_DB_PREFIX . 'dch_sales_line s'
+            . ' INNER JOIN ' . MAIN_DB_PREFIX . 'dch_bundle_component bc ON bc.entity=s.entity AND bc.fk_catalog_product=s.fk_catalog_product'
+            . ' INNER JOIN ' . MAIN_DB_PREFIX . 'product p ON p.rowid=bc.fk_product'
+            . ' WHERE ' . $where
+            . ' GROUP BY s.connector, p.rowid, p.ref, p.label ORDER BY total_units DESC, p.ref, s.connector';
+        $resql = $this->db->query($sql);
+        if ($resql) {
+            while ($obj = $this->db->fetch_object($resql)) {
+                $rows[] = array(
+                    'connector' => (string) $obj->connector,
+                    'product_id' => (int) $obj->product_id,
+                    'ref' => (string) $obj->ref,
+                    'label' => (string) $obj->label,
+                    'orders' => (int) $obj->orders_count,
+                    'direct_units' => (float) $obj->direct_units,
+                    'bundle_units' => (float) $obj->bundle_units,
+                    'total_units' => (float) $obj->total_units,
+                );
+            }
+        }
+        return $rows;
+    }
+
     /** Platform x actual source warehouse, based on applied native stock movements. */
     public function getWarehouseRows(array $filters)
     {
