@@ -455,13 +455,15 @@ class DolliCommerceHub
     {
         $applied = (int) ($result['applied'] ?? 0);
         $already = (int) ($result['already'] ?? 0);
+        $ignored = (int) ($result['ignored'] ?? 0);
         $unmapped = (int) ($result['unmapped'] ?? 0);
         $errors = (int) ($result['errors'] ?? 0);
-        if ($applied + $already + $unmapped + $errors === 0) return '';
+        if ($applied + $already + $ignored + $unmapped + $errors === 0) return '';
 
         $parts = array();
         if ($applied > 0) $parts[] = $applied . ' deducted';
         if ($already > 0) $parts[] = $already . ' already applied';
+        if ($ignored > 0) $parts[] = $ignored . ' ignored or disabled';
         if ($unmapped > 0) $parts[] = $unmapped . ' unmapped';
         if ($errors > 0) $parts[] = $errors . ' failed';
         $message = ' [stock: ' . implode(', ', $parts) . ']';
@@ -650,6 +652,35 @@ class DolliCommerceHub
             if (count($products) < 100 || ($productTotalPages > 0 && $page >= $productTotalPages)) break;
         }
         return array(true, 'WooCommerce catalogue refreshed: ' . $stats['products'] . ' products and ' . $stats['variations'] . ' variations.', $stats);
+    }
+
+    public function backfillWooStock($limit = 2000)
+    {
+        if (!$this->inventory()->stockEnabled('woocommerce')) return array(false, 'Enable WooCommerce stock deduction before applying past sales.');
+        $sql = 'SELECT woo_order_id FROM ' . MAIN_DB_PREFIX . 'woobanksync_log WHERE entity=' . (int) $this->conf->entity
+            . $this->logConnectorCondition('woocommerce') . " AND sync_status IN ('synced','dryrun','pending_finance') ORDER BY rowid ASC LIMIT " . max(1, min(10000, (int) $limit));
+        $resql = $this->db->query($sql);
+        if (!$resql) return array(false, 'Could not read synced WooCommerce orders: ' . $this->db->lasterror());
+        $ids = array();
+        while ($row = $this->db->fetch_object($resql)) if ((int) $row->woo_order_id > 0) $ids[] = (int) $row->woo_order_id;
+        if (empty($ids)) return array(true, 'No synced WooCommerce orders need a stock backfill.');
+
+        $totals = array('applied' => 0, 'already' => 0, 'ignored' => 0, 'unmapped' => 0, 'errors' => 0, 'missing' => 0);
+        $client = $this->client();
+        foreach (array_chunk(array_values(array_unique($ids)), 50) as $chunk) {
+            $orders = $client->getOrdersByIds($chunk, array('id', 'number', 'date_created', 'date_paid', 'line_items'));
+            if ($orders === false) return array(false, 'WooCommerce stock backfill failed: ' . $client->error);
+            $found = array();
+            foreach ($orders as $order) {
+                $found[(int) ($order['id'] ?? 0)] = true;
+                $result = $this->inventory()->processOrder('woocommerce', $order);
+                foreach (array('applied', 'already', 'ignored', 'unmapped', 'errors') as $key) $totals[$key] += (int) ($result[$key] ?? 0);
+            }
+            foreach ($chunk as $id) if (empty($found[$id])) $totals['missing']++;
+        }
+        $message = 'WooCommerce stock backfill complete: ' . $totals['applied'] . ' deductions applied, ' . $totals['already'] . ' already applied, '
+            . $totals['unmapped'] . ' unmapped, ' . $totals['ignored'] . ' ignored, ' . $totals['errors'] . ' failed, ' . $totals['missing'] . ' missing orders.';
+        return array($totals['errors'] + $totals['missing'] === 0, $message);
     }
 
     public function autoCreateAndMapAccounts()
