@@ -1085,6 +1085,34 @@ class FinanceAutomationHub
         return array(true, $count > 0 ? 'Removed ' . $count . ' stale legacy menu row(s).' : 'No stale legacy menu rows remain.', $count);
     }
 
+    public function getBankEntrySequenceStatus()
+    {
+        $table = MAIN_DB_PREFIX . 'bank';
+        $highest = 0;
+        $resql = $this->db->query('SELECT MAX(rowid) AS highest FROM ' . $table);
+        if ($resql && ($row = $this->db->fetch_object($resql))) $highest = max(0, (int) $row->highest);
+
+        $next = $highest + 1;
+        $resql = $this->db->query("SELECT AUTO_INCREMENT AS next_id FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='" . $this->db->escape($table) . "' LIMIT 1");
+        if ($resql && ($row = $this->db->fetch_object($resql)) && !empty($row->next_id)) $next = max($next, (int) $row->next_id);
+        return array('highest' => $highest, 'minimum' => $highest + 1, 'next' => $next);
+    }
+
+    public function setBankEntrySequence($requestedNext)
+    {
+        $requestedNext = (int) $requestedNext;
+        $status = $this->getBankEntrySequenceStatus();
+        if ($requestedNext < 1) return array(false, 'The next bank entry reference must be a positive integer.', $status);
+        if ($requestedNext < $status['minimum']) {
+            return array(false, 'The next reference cannot be lower than ' . $status['minimum'] . ' because bank entry #' . $status['highest'] . ' still exists.', $status);
+        }
+        if (!$this->db->query('ALTER TABLE ' . MAIN_DB_PREFIX . 'bank AUTO_INCREMENT=' . $requestedNext)) {
+            return array(false, 'Could not change the bank entry sequence: ' . $this->db->lasterror(), $status);
+        }
+        $status = $this->getBankEntrySequenceStatus();
+        return array(true, 'The next global Dolibarr bank entry reference is now ' . $status['next'] . '.', $status);
+    }
+
     public function runDatabaseChecks()
     {
         $messages = array();
