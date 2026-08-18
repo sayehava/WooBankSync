@@ -1140,16 +1140,18 @@ class FinanceAutomationHub
         $table = MAIN_DB_PREFIX . 'menu';
         if (empty($this->getTableColumns($table))) return array(false, 'Dolibarr menu storage is unavailable.', 0);
         $conditions = array(
-            "mainmenu IN ('woobanksync','commerceautomationhub','dollicommercehub','dolibarrcommercehub')",
+            "mainmenu IN ('woobanksync','commerceautomationhub','dolicommercehub','dollicommercehub','dolibarrcommercehub')",
             "leftmenu LIKE 'woobanksync%'",
             "leftmenu LIKE 'commerceautomationhub%'",
+            "leftmenu LIKE 'dolicommercehub%'",
             "leftmenu LIKE 'dollicommercehub%'",
             "leftmenu LIKE 'dolibarrcommercehub%'",
             "url LIKE '%/custom/woobanksync/%'",
             "url LIKE '%/custom/commerceautomationhub/%'",
+            "url LIKE '%/custom/dolicommercehub/%'",
             "url LIKE '%/custom/dollicommercehub/%'",
             "url LIKE '%/custom/dolibarrcommercehub/%'",
-            "titre IN ('WooBankSync','Commerce Automation Hub','Dolli Commerce Hub','Dolibarr Commerce Hub')",
+            "titre IN ('WooBankSync','Commerce Automation Hub','Doli Commerce Hub','Dolli Commerce Hub','Dolibarr Commerce Hub')",
         );
         $where = '(' . implode(' OR ', $conditions) . ')';
         $count = $this->countRows($table, $where);
