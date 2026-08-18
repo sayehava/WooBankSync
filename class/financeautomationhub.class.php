@@ -1061,11 +1061,39 @@ class FinanceAutomationHub
         return 0;
     }
 
+    public function cleanupLegacyMenus()
+    {
+        $table = MAIN_DB_PREFIX . 'menu';
+        if (empty($this->getTableColumns($table))) return array(false, 'Dolibarr menu storage is unavailable.', 0);
+        $conditions = array(
+            "mainmenu IN ('woobanksync','commerceautomationhub','dollicommercehub','dolibarrcommercehub')",
+            "leftmenu LIKE 'woobanksync%'",
+            "leftmenu LIKE 'commerceautomationhub%'",
+            "leftmenu LIKE 'dollicommercehub%'",
+            "leftmenu LIKE 'dolibarrcommercehub%'",
+            "url LIKE '%/custom/woobanksync/%'",
+            "url LIKE '%/custom/commerceautomationhub/%'",
+            "url LIKE '%/custom/dollicommercehub/%'",
+            "url LIKE '%/custom/dolibarrcommercehub/%'",
+            "titre IN ('WooBankSync','Commerce Automation Hub','Dolli Commerce Hub','Dolibarr Commerce Hub')",
+        );
+        $where = '(' . implode(' OR ', $conditions) . ')';
+        $count = $this->countRows($table, $where);
+        if ($count > 0 && !$this->db->query('DELETE FROM ' . $table . ' WHERE ' . $where)) {
+            return array(false, 'Could not remove stale legacy menu rows: ' . $this->db->lasterror(), 0);
+        }
+        return array(true, $count > 0 ? 'Removed ' . $count . ' stale legacy menu row(s).' : 'No stale legacy menu rows remain.', $count);
+    }
+
     public function runDatabaseChecks()
     {
         $messages = array();
         $prefix = MAIN_DB_PREFIX;
         $table = $prefix . 'fah_sync_log';
+
+        list($menuOk, $menuMessage) = $this->cleanupLegacyMenus();
+        if (!$menuOk) return array(false, $menuMessage);
+        $messages[] = $menuMessage;
 
         $sql = "CREATE TABLE IF NOT EXISTS " . $table . " (" .
             "rowid integer AUTO_INCREMENT PRIMARY KEY," .
