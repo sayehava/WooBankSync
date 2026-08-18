@@ -40,6 +40,9 @@ if (!function_exists('wbs_set_const_safe')) {
 }
 
 $action = GETPOST('action', 'aZ09');
+$dchRequestedConnector = strtolower((string) GETPOST('connector_view', 'alpha'));
+if (!in_array($dchRequestedConnector, array('woocommerce', 'amazon', 'sumup'), true)) $dchRequestedConnector = '';
+$dchSetupAction = $_SERVER['PHP_SELF'] . ($dchRequestedConnector !== '' ? '?connector_view=' . $dchRequestedConnector : '');
 $sync = new CommerceAutomationHub($db, $conf, $langs);
 list($autoSchemaOk, $autoSchemaMessage) = $sync->runDatabaseChecks(); // Safe, idempotent lazy migration for uploaded upgrades.
 if (!$autoSchemaOk) setEventMessages($autoSchemaMessage, null, 'errors');
@@ -428,7 +431,7 @@ $linkback = '<a href="' . DOL_URL_ROOT . '/admin/modules.php?restore_lastsearch_
 
 ?>
 <div class="center" style="margin-bottom:12px;">
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline;">
+<form method="POST" action="<?php echo dol_escape_htmltag($dchSetupAction); ?>" style="display:inline;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="dbcheck">
 <input class="button" type="submit" value="Run/update database checks without disabling module">
 </form>
@@ -462,7 +465,7 @@ $dchConnectorDefinitions = array(
     'amazon' => array('label' => 'Amazon Seller', 'description' => 'Seller orders, listings and stock; Amazon invoices remain in Amazon'),
     'sumup' => array('label' => 'SumUp', 'description' => 'Card transactions and product lines, with Dolibarr POS duplicate protection'),
 );
-$dchSelectedConnector = strtolower((string) GETPOST('connector_view', 'alpha'));
+$dchSelectedConnector = $dchRequestedConnector;
 if ($dchSelectedConnector === '') $dchSelectedConnector = strtolower((string) GETPOST('connector', 'alpha'));
 if (!isset($dchConnectorDefinitions[$dchSelectedConnector])) $dchSelectedConnector = '';
 $dchWooSetupAction = $_SERVER['PHP_SELF'] . '?connector_view=woocommerce';
@@ -709,6 +712,7 @@ $dchProducts = $sync->inventory()->getDolibarrProducts();
 <div style="margin:18px 0 8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
   <h2 style="margin:0;flex:1;">Product and bundle stock recipes</h2>
   <form method="GET" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="margin:0;">
+    <?php if ($dchSelectedConnector !== '') { ?><input type="hidden" name="connector_view" value="<?php echo dol_escape_htmltag($dchSelectedConnector); ?>"><?php } ?>
     <label>Channel <select class="flat" name="catalog_connector" onchange="this.form.submit()"><option value="">All active catalogues</option><?php foreach ($dchConnectorDefinitions as $connectorKey => $connectorDefinition) { ?><option value="<?php echo dol_escape_htmltag($connectorKey); ?>"<?php echo $dchCatalogConnector === $connectorKey ? ' selected' : ''; ?>><?php echo dol_escape_htmltag($connectorDefinition['label']); ?></option><?php } ?></select></label>
   </form>
   <?php
@@ -716,7 +720,7 @@ $dchProducts = $sync->inventory()->getDolibarrProducts();
   $dchRefreshActions = array('woocommerce' => 'refresh_woo_catalog', 'amazon' => 'refresh_amazon_catalog', 'sumup' => 'refresh_sumup_catalog');
   if (isset($dchRefreshActions[$dchRefreshConnector])) { ?>
   <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>?catalog_connector=<?php echo dol_escape_htmltag($dchRefreshConnector); ?>" style="margin:0;">
-    <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="<?php echo dol_escape_htmltag($dchRefreshActions[$dchRefreshConnector]); ?>">
+    <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="<?php echo dol_escape_htmltag($dchRefreshActions[$dchRefreshConnector]); ?>"><input type="hidden" name="connector_view" value="<?php echo dol_escape_htmltag($dchSelectedConnector); ?>">
     <button class="button" type="submit">Refresh <?php echo dol_escape_htmltag($dchConnectorDefinitions[$dchRefreshConnector]['label']); ?> catalogue</button>
   </form><?php } ?>
 </div>
@@ -732,7 +736,7 @@ $dchProducts = $sync->inventory()->getDolibarrProducts();
 ?>
 <tr class="oddeven">
   <td style="vertical-align:top;min-width:220px;">
-    <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" id="<?php echo $recipeFormId; ?>"><input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="save_stock_recipe"><input type="hidden" name="catalog_id" value="<?php echo (int) $catalogRow['id']; ?>"></form>
+    <form method="POST" action="<?php echo dol_escape_htmltag($dchSetupAction); ?>" id="<?php echo $recipeFormId; ?>"><input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="save_stock_recipe"><input type="hidden" name="catalog_id" value="<?php echo (int) $catalogRow['id']; ?>"><input type="hidden" name="catalog_connector" value="<?php echo dol_escape_htmltag($dchCatalogConnector); ?>"></form>
     <strong><?php echo dol_escape_htmltag(ucfirst($catalogRow['connector'])); ?></strong><br><?php echo dol_escape_htmltag($catalogRow['label']); ?><br><span class="opacitymedium"><?php echo dol_escape_htmltag($catalogRow['sku'] !== '' ? 'SKU ' . $catalogRow['sku'] : 'ID ' . $catalogRow['external_product_id'] . ($catalogRow['external_variant_id'] !== '' ? ' / ' . $catalogRow['external_variant_id'] : '')); ?></span></td>
   <td style="vertical-align:top;min-width:185px;">
       <select class="flat" name="stock_mode" form="<?php echo $recipeFormId; ?>" style="width:100%;">
@@ -1009,7 +1013,7 @@ $diagJson = !empty($diagData) ? json_encode($diagData, JSON_PRETTY_PRINT | JSON_
 <br><table class="noborder centpercent">
 <tr class="liste_titre"><td>Diagnostics</td></tr>
 <tr><td>
-<form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:inline-block;margin-right:8px;">
+<form method="POST" action="<?php echo dol_escape_htmltag($dchWooSetupAction); ?>" style="display:inline-block;margin-right:8px;">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="diagnose_meta">
 <input class="button" type="submit" value="Inspect WooCommerce order meta (last 10 orders)">
 </form>
