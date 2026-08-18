@@ -1156,10 +1156,14 @@ class DolliCommerceHub
         return array(false, 'Germanized integration not available.');
     }
 
-    public function getBankExtraFields()
+    public function getBankExtraFields($types = array('varchar', 'text'))
     {
         $fields = array();
-        $sql = 'SELECT name, label FROM ' . MAIN_DB_PREFIX . "extrafields WHERE elementtype='bank' AND entity IN (0," . (int) $this->conf->entity . ") AND type IN ('varchar','text') ORDER BY pos, label";
+        $allowedTypes = array('varchar', 'text', 'double', 'price', 'integer', 'int', 'real');
+        $types = array_values(array_intersect($allowedTypes, (array) $types));
+        if (empty($types)) return $fields;
+        $quotedTypes = array_map(function ($type) { return "'" . $type . "'"; }, $types);
+        $sql = 'SELECT name, label FROM ' . MAIN_DB_PREFIX . "extrafields WHERE elementtype='bank' AND entity IN (0," . (int) $this->conf->entity . ') AND type IN (' . implode(',', $quotedTypes) . ') ORDER BY pos, label';
         $resql = $this->db->query($sql);
         if ($resql) {
             while ($obj = $this->db->fetch_object($resql)) {
@@ -1170,7 +1174,36 @@ class DolliCommerceHub
         return $fields;
     }
 
-    public function createAndMapAmountExtraFields()
+    public function getBankAmountExtraFields()
+    {
+        return $this->getBankExtraFields(array('double', 'price', 'integer', 'int', 'real'));
+    }
+
+    public function saveAmountExtraFieldMapping($grossCode, $feeCode, $grossLabel = '', $feeLabel = '')
+    {
+        $grossCode = trim((string) $grossCode);
+        $feeCode = trim((string) $feeCode);
+        $fields = $this->getBankAmountExtraFields();
+        foreach (array('Gross' => $grossCode, 'Fee' => $feeCode) as $name => $code) {
+            if ($code !== '' && !isset($fields[$code])) return array(false, $name . ' must be mapped to a numeric bank-entry custom field.');
+        }
+        if ($grossCode !== '' && $grossCode === $feeCode) return array(false, 'Gross amount and fee must use different custom fields.');
+        $invoiceCode = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
+        if ($invoiceCode !== '' && ($grossCode === $invoiceCode || $feeCode === $invoiceCode)) {
+            return array(false, 'Amount fields cannot use the mapped invoice-number custom field.');
+        }
+        $this->setConst('WBS_EXTRAFIELD_GROSS_CODE', $grossCode, 'chaine');
+        $this->setConst('WBS_EXTRAFIELD_FEE_CODE', $feeCode, 'chaine');
+        foreach (array($grossCode => $grossLabel, $feeCode => $feeLabel) as $code => $label) {
+            $label = trim((string) $label);
+            if ($code !== '' && $label !== '') {
+                $this->db->query('UPDATE ' . MAIN_DB_PREFIX . "extrafields SET label='" . $this->db->escape(substr($label, 0, 255)) . "' WHERE elementtype='bank' AND name='" . $this->db->escape($code) . "' AND entity IN (0," . (int) $this->conf->entity . ')');
+            }
+        }
+        return array(true, 'WooCommerce amount custom field mapping saved.');
+    }
+
+    public function createAndMapAmountExtraFields($grossLabel = '', $feeLabel = '')
     {
         require_once DOL_DOCUMENT_ROOT . '/core/class/extrafields.class.php';
         $extrafields = new ExtraFields($this->db);
@@ -1179,16 +1212,18 @@ class DolliCommerceHub
         $failed  = array();
 
         $toCreate = array(
-            'wbs_gross_amount' => array('label' => 'WooCommerce gross amount', 'const' => 'WBS_EXTRAFIELD_GROSS_CODE'),
-            'wbs_fee_amount'   => array('label' => 'WooCommerce fee amount', 'const' => 'WBS_EXTRAFIELD_FEE_CODE'),
+            'wbs_gross_amount' => array('label' => trim((string) $grossLabel) ?: 'WooCommerce gross amount', 'const' => 'WBS_EXTRAFIELD_GROSS_CODE'),
+            'wbs_fee_amount'   => array('label' => trim((string) $feeLabel) ?: 'WooCommerce fee amount', 'const' => 'WBS_EXTRAFIELD_FEE_CODE'),
         );
 
-        $existingFields = $this->getBankExtraFields();
+        $existingFields = $this->getBankAmountExtraFields();
+        $claimed = array_filter(array(trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''))));
 
         foreach ($toCreate as $code => $info) {
             $currentMapping = trim((string) $this->getConst($info['const'], ''));
-            if ($currentMapping !== '') {
+            if ($currentMapping !== '' && isset($existingFields[$currentMapping]) && !in_array($currentMapping, $claimed, true)) {
                 $reused[] = $code . ' (already mapped to ' . $currentMapping . ')';
+                $claimed[] = $currentMapping;
                 continue;
             }
 
@@ -1214,11 +1249,19 @@ class DolliCommerceHub
             }
 
             $this->setConst($info['const'], $code, 'chaine');
+            $claimed[] = $code;
         }
 
         if (!empty($failed)) {
             return array(false, 'Failed to create: ' . implode(', ', $failed) . '. Created: ' . implode(', ', $created) . '. Reused/skipped: ' . implode(', ', $reused) . '.');
         }
+        list($mappingOk, $mappingMessage) = $this->saveAmountExtraFieldMapping(
+            $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', ''),
+            $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''),
+            $toCreate['wbs_gross_amount']['label'],
+            $toCreate['wbs_fee_amount']['label']
+        );
+        if (!$mappingOk) return array(false, $mappingMessage);
         return array(true, 'WooCommerce amount custom fields ready. Created: ' . (empty($created) ? 'none' : implode(', ', $created)) . '. Reused/skipped: ' . (empty($reused) ? 'none' : implode(', ', $reused)) . '.');
     }
 
