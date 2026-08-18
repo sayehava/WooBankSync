@@ -39,6 +39,8 @@ A normal item is a recipe with one Dolibarr component at quantity `1`. A double 
 
 Stock deductions are idempotent per channel, order, order line, and Dolibarr component. Re-running a sync can apply a recipe that was mapped later, but it does not deduct an already-applied sale twice. Each successful deduction is a native Dolibarr stock movement and also appears in the module audit with channel, order, source warehouse, destination and native movement ID.
 
+Catalogue discovery is also idempotent. The database check consolidates duplicate external-product rows created by an older or incomplete schema, preserves the strongest saved recipe, reconnects sales and movement records, and restores the unique channel/product/variation key. Later syncs use an atomic upsert and cannot append the same recipe again.
+
 Before enabling stock deductions, select a warehouse for each recipe component (or set a connector fallback) and map every sellable channel item. If a SumUp transaction contains no product lines, the financial movement can still sync, but the UI reports that stock could not be assigned.
 
 This release records sale deductions only. A later refund, cancellation, return, or recipe/warehouse change does not automatically reverse a stock movement that was already applied; those adjustments remain explicit Dolibarr stock operations.
@@ -195,12 +197,18 @@ The mapped gross, fee, and invoice display labels can be renamed from the setup 
 
 ---
 
+## Bank/Cash and test-data maintenance
+
+Configuration shows the number of module-created bank accounts, imported bank entries, indexed documents, and sync-log rows. It also shows Dolibarr's highest and next global bank-entry references. An administrator may set the next reference to any collision-free value at or above the highest remaining `llx_bank.rowid` plus one. This sequence is global to every Bank/Cash entry, not private to this module.
+
+The legacy-menu cleanup removes stale WooBankSync, Commerce Automation Hub, Dolli Commerce Hub, and Dolibarr Commerce Hub menu rows. It runs during activation and database checks and is also available as an explicit button.
+
 ## 🗑️ Desync
 
 > [!WARNING]
 > The Desync action is **destructive** and is protected by a confirmation prompt.
 
-Desync removes all bank entries and log rows created by Finance Automation Hub. It uses stored bank line IDs first and falls back to label patterns (`WOO - #...`) for older log entries.
+Desync removes all bank entries, downloaded/indexed WooCommerce PDFs, cache rows, and log rows created by Finance Automation Hub. It uses stored bank line IDs first and falls back to label patterns (`WOO - #...`) for older log entries. An optional checkbox also deletes empty virtual bank accounts created by the module and clears their mappings. Non-empty and manually mapped accounts are retained.
 
 Manually created Dolibarr entries and unrelated bank records are **never touched**.
 
@@ -215,6 +223,8 @@ Manually created Dolibarr entries and unrelated bank records are **never touched
 2. ▶️ Activate Finance Automation Hub and run **Run/update database checks**
 3. ⚙️ Configure connector credentials, payment mappings, product recipes, and warehouses
 4. 🚀 Test with **Sync now**
+
+If an earlier module title remains in the menu after upgrading, open Configuration and click **Remove stale Dolli Commerce Hub menus**, then reload the page.
 
 ---
 
