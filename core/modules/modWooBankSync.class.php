@@ -69,6 +69,8 @@ class modWooBankSync extends DolibarrModules
             array('WBS_WOO_URL', 'chaine', '', 'WooCommerce store URL', 0, 'current', 1),
             array('WBS_WOO_CONSUMER_KEY', 'chaine', '', 'WooCommerce consumer key', 0, 'current', 1),
             array('WBS_WOO_CONSUMER_SECRET', 'password', '', 'WooCommerce consumer secret', 0, 'current', 1),
+            array('DCH_STRIPE_SECRET_KEY', 'password', '', 'Stripe API secret for exact processor fees', 0, 'current', 1),
+            array('DCH_STRIPE_ACCOUNT_ID', 'chaine', '', 'Optional connected Stripe account id', 0, 'current', 1),
             array('WBS_SYNC_FROM_DATE', 'chaine', '', 'Sync from date YYYY-MM-DD', 0, 'current', 1),
             array('WBS_ORDER_STATUSES', 'chaine', 'processing,completed', 'WooCommerce order statuses', 0, 'current', 1),
             array('WBS_GATEWAY_PAYPAL', 'chaine', 'paypal,ppcp-gateway,ppec_paypal', 'PayPal method IDs', 0, 'current', 1),
