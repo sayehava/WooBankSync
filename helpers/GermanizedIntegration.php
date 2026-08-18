@@ -466,13 +466,13 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
             }
         }
 
-        $sql   = 'SELECT * FROM ' . MAIN_DB_PREFIX . 'ecm_directories WHERE rowid=' . $folderId;
-        $resql = $this->db->query($sql);
-        if (!$resql || !($obj = $this->db->fetch_object($resql))) {
+        require_once DOL_DOCUMENT_ROOT . '/ecm/class/ecmdirectory.class.php';
+        $folder = new EcmDirectory($this->db);
+        if ($folder->fetch($folderId) <= 0) {
             $this->pdfLog[] = '[STORE] ECM folder row not found (ID=' . $folderId . ') — re-run database checks in Setup';
             return '';
         }
-        $relpath = trim((string) (!empty($obj->relpath) ? $obj->relpath : (!empty($obj->fullpath) ? $obj->fullpath : ($obj->filepath ?? ''))), '/');
+        $relpath = trim((string) $folder->getRelativePath(), '/\\');
         if ($relpath === '') {
             $this->pdfLog[] = '[STORE] ECM folder has empty path — re-run database checks in Setup';
             return '';
@@ -499,8 +499,12 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
             $this->pdfLog[] = '[STORE] file_put_contents failed: ' . $filepath;
             return '';
         }
-        $this->pdfLog[] = '[STORE] Saved: ' . $ecmRel;
-        $this->registerEcmFile($folderId, $filename, $ecmRel, $orderId, $invoiceNumber);
+        if (!$this->registerEcmFile($folderId, $filename, $ecmRel, $orderId, $invoiceNumber)) {
+            @unlink($filepath);
+            $this->pdfLog[] = '[STORE] ECM index registration failed: ' . $this->db->lasterror();
+            return '';
+        }
+        $this->pdfLog[] = '[STORE] Saved in Documents: ' . $ecmRel;
         return $ecmRel;
     }
 
@@ -710,27 +714,31 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     private function registerEcmFile($folderId, $filename, $relPath, $orderId, $invoiceNumber)
     {
         $fields = $this->getTableColumns(MAIN_DB_PREFIX . 'ecm_files');
-        if (empty($fields)) return;
+        if (empty($fields)) return false;
         $folderPath = ltrim(dirname($relPath), '/\\');
         $label      = pathinfo($filename, PATHINFO_FILENAME);
+        $userId     = !empty($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : max(1, (int) $this->getConst('DCH_STOCK_USER_ID', '1'));
         $data       = array();
+        $this->addDataIfColumn($data, $fields, 'ref', "'" . $this->db->escape(sha1($folderPath . '/' . $filename)) . "'", false);
         $this->addDataIfColumn($data, $fields, 'label', "'" . $this->db->escape($label) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'share', "''", false);
         $this->addDataIfColumn($data, $fields, 'filename', "'" . $this->db->escape($filename) . "'", false);
         $this->addDataIfColumn($data, $fields, 'filepath', "'" . $this->db->escape($folderPath) . "'", false);
         $this->addDataIfColumn($data, $fields, 'fullpath_orig', "'" . $this->db->escape($relPath) . "'", false);
-        $this->addDataIfColumn($data, $fields, 'fk_parent', (int) $folderId, true);
         $this->addDataIfColumn($data, $fields, 'entity', (int) $this->conf->entity, true);
-        $this->addDataIfColumn($data, $fields, 'fk_user_c', isset($GLOBALS['user']->id) ? (int) $GLOBALS['user']->id : 0, true);
+        $this->addDataIfColumn($data, $fields, 'fk_user_c', $userId, true);
         $this->addDataIfColumn($data, $fields, 'date_c', $this->sqlDateNow(), false);
-        $this->addDataIfColumn($data, $fields, 'note', "'" . $this->db->escape('Dolli Commerce Hub order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
+        $this->addDataIfColumn($data, $fields, 'description', "'" . $this->db->escape('WooCommerce order #' . $orderId . ($invoiceNumber !== '' ? ' / ' . $invoiceNumber : '')) . "'", false);
         $this->addDataIfColumn($data, $fields, 'keywords', "'" . $this->db->escape('woobanksync woo ' . $orderId) . "'", false);
-        $this->addDataIfColumn($data, $fields, 'mimetype', "'application/pdf'", false);
-        $this->addDataIfColumn($data, $fields, 'status', 1, true);
+        $this->addDataIfColumn($data, $fields, 'gen_or_uploaded', "'generated'", false);
+        $this->addDataIfColumn($data, $fields, 'src_object_type', "'woobanksync'", false);
+        $this->addDataIfColumn($data, $fields, 'src_object_id', (int) $orderId, true);
         $this->addDataIfColumn($data, $fields, 'position', 0, true);
-        if (empty($data)) return;
-        $sql = 'INSERT IGNORE INTO ' . MAIN_DB_PREFIX . 'ecm_files (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
-        $this->db->query($sql);
-        $this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'ecm_directories SET cachenbofdoc=(SELECT COUNT(*) FROM ' . MAIN_DB_PREFIX . 'ecm_files WHERE fk_parent=' . (int) $folderId . ' AND entity=' . (int) $this->conf->entity . ') WHERE rowid=' . (int) $folderId);
+        if (empty($data)) return false;
+        $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'ecm_files (' . implode(',', array_keys($data)) . ') VALUES (' . implode(',', array_values($data)) . ')';
+        if (!$this->db->query($sql)) return false;
+        $this->db->query('UPDATE ' . MAIN_DB_PREFIX . "ecm_directories SET cachenbofdoc=(SELECT COUNT(*) FROM " . MAIN_DB_PREFIX . "ecm_files WHERE filepath='" . $this->db->escape($folderPath) . "' AND entity=" . (int) $this->conf->entity . ') WHERE rowid=' . (int) $folderId);
+        return true;
     }
 
     // ── Desync ────────────────────────────────────────────────────────────────
