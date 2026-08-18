@@ -114,7 +114,9 @@ WOO - #ORDER_NUMBER Buyer Name - InvoiceNumber
 WOO - #30955 Max Mustermann - RE-2026-00123
 ```
 
-The invoice reference is also written to the native `Number / Check/Transfer N°` bank field. No custom bank fields are used for this.
+The invoice reference is also written to the native `Number / Check/Transfer N°` bank field. It can optionally be mapped to a separate text custom field. The invoice field label is configurable.
+
+Downloaded WooCommerce invoice PDFs are saved in the selected Dolibarr Documents folder and indexed in ECM so they appear in the Documents module.
 
 ---
 
@@ -187,7 +189,9 @@ The sync log is available on the dashboard and in the module setup page. Each ro
 
 Dolli Commerce Hub can write the WooCommerce **gross amount** and **fee** into Dolibarr bank extra fields so they appear in account exports and reports alongside the net bank entry. Amazon and SumUp costs remain in their connector-neutral sync log and sales analytics instead of using these WooCommerce fields.
 
-Configure the field codes inside **WooCommerce configuration → WooCommerce amount custom fields**. The **Create and map missing fields** button creates any missing extra fields and maps them automatically without overwriting manually configured mappings.
+Configure the fields inside **WooCommerce configuration → WooCommerce amount custom fields**. Gross and fee accept only numeric bank-entry custom fields, must use different fields, and cannot use the invoice-number field. You can create fields manually in Dolibarr and map them, or use the explicit **Create and map missing amount fields automatically** button.
+
+The mapped gross, fee, and invoice display labels can be renamed from the setup page. After correcting an older mapping, use **Repair existing bank entries** to rewrite the values on previously synced WooCommerce movements.
 
 ---
 
