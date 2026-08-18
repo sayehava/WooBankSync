@@ -113,7 +113,9 @@ class FahInventoryManager
                 return array(false, $this->db->lasterror());
             }
         }
-        return array(true, 'Catalogue, bundle, stock and sales analytics tables are ready.');
+        list($uniqueOk, $duplicatesRemoved) = $this->ensureCatalogUniqueness();
+        if (!$uniqueOk) return array(false, $duplicatesRemoved);
+        return array(true, 'Catalogue, bundle, stock and sales analytics tables are ready.' . ($duplicatesRemoved > 0 ? ' Consolidated ' . $duplicatesRemoved . ' duplicate catalogue rows.' : ''));
     }
 
     public function connectorEnabled($connector)
@@ -177,27 +179,58 @@ class FahInventoryManager
         if ($externalProductId === '' && $sku === '') return 0;
         if ($externalProductId === '') $externalProductId = 'sku:' . $sku;
 
-        $sql = 'SELECT rowid FROM ' . MAIN_DB_PREFIX . 'fah_catalog_product'
-            . ' WHERE entity=' . (int) $this->conf->entity
-            . " AND connector='" . $this->db->escape($connector) . "'"
-            . " AND external_product_id='" . $this->db->escape($externalProductId) . "'"
-            . " AND external_variant_id='" . $this->db->escape($externalVariantId) . "' LIMIT 1";
-        $resql = $this->db->query($sql);
-        $obj = $resql ? $this->db->fetch_object($resql) : null;
-        if ($obj) {
-            $sql = 'UPDATE ' . MAIN_DB_PREFIX . 'fah_catalog_product SET'
-                . " external_sku='" . $this->db->escape($sku) . "',"
-                . " label='" . $this->db->escape($label) . "', active=1, date_seen=" . $this->sqlDateNow()
-                . ' WHERE rowid=' . (int) $obj->rowid;
-            return $this->db->query($sql) ? (int) $obj->rowid : 0;
-        }
-
         $sql = 'INSERT INTO ' . MAIN_DB_PREFIX . 'fah_catalog_product'
             . ' (entity, connector, external_product_id, external_variant_id, external_sku, label, stock_mode, active, date_seen) VALUES ('
             . (int) $this->conf->entity . ", '" . $this->db->escape($connector) . "', '"
             . $this->db->escape($externalProductId) . "', '" . $this->db->escape($externalVariantId) . "', '"
-            . $this->db->escape($sku) . "', '" . $this->db->escape($label) . "', 'unmapped', 1, " . $this->sqlDateNow() . ')';
+            . $this->db->escape($sku) . "', '" . $this->db->escape($label) . "', 'unmapped', 1, " . $this->sqlDateNow() . ')'
+            . " ON DUPLICATE KEY UPDATE rowid=LAST_INSERT_ID(rowid), external_sku=VALUES(external_sku), label=VALUES(label), active=1, date_seen=VALUES(date_seen)";
         return $this->db->query($sql) ? (int) $this->db->last_insert_id(MAIN_DB_PREFIX . 'fah_catalog_product') : 0;
+    }
+
+    private function ensureCatalogUniqueness()
+    {
+        $table = MAIN_DB_PREFIX . 'fah_catalog_product';
+        $index = $this->db->query("SHOW INDEX FROM " . $table . " WHERE Key_name='uk_fah_catalog_external'");
+        if ($index && $this->db->num_rows($index) > 0) return array(true, 0);
+
+        $groups = $this->db->query('SELECT connector, external_product_id, external_variant_id FROM ' . $table
+            . ' WHERE entity=' . (int) $this->conf->entity
+            . ' GROUP BY connector, external_product_id, external_variant_id HAVING COUNT(*) > 1');
+        if (!$groups) return array(false, 'Could not inspect catalogue duplicates: ' . $this->db->lasterror());
+        $removed = 0;
+        while ($group = $this->db->fetch_object($groups)) {
+            $where = 'entity=' . (int) $this->conf->entity
+                . " AND connector='" . $this->db->escape($group->connector) . "'"
+                . " AND external_product_id='" . $this->db->escape($group->external_product_id) . "'"
+                . " AND external_variant_id='" . $this->db->escape($group->external_variant_id) . "'";
+            $rows = $this->db->query('SELECT c.rowid, c.stock_mode, c.is_bundle, COUNT(bc.rowid) AS component_count FROM ' . $table . ' c'
+                . ' LEFT JOIN ' . MAIN_DB_PREFIX . 'fah_bundle_component bc ON bc.entity=c.entity AND bc.fk_catalog_product=c.rowid'
+                . ' WHERE c.' . $where . " GROUP BY c.rowid, c.stock_mode, c.is_bundle"
+                . " ORDER BY (c.stock_mode='recipe') DESC, component_count DESC, (c.stock_mode='ignore') DESC, c.rowid ASC");
+            if (!$rows || !($canonical = $this->db->fetch_object($rows))) return array(false, 'Could not select a canonical catalogue recipe: ' . $this->db->lasterror());
+            $canonicalId = (int) $canonical->rowid;
+            while ($duplicate = $this->db->fetch_object($rows)) {
+                $duplicateId = (int) $duplicate->rowid;
+                if (!empty($duplicate->is_bundle) && empty($canonical->is_bundle)) {
+                    if (!$this->db->query('UPDATE ' . $table . ' SET is_bundle=1 WHERE rowid=' . $canonicalId)) return array(false, 'Could not preserve the duplicate bundle flag: ' . $this->db->lasterror());
+                    $canonical->is_bundle = 1;
+                }
+                $copy = 'INSERT INTO ' . MAIN_DB_PREFIX . 'fah_bundle_component (entity, fk_catalog_product, fk_product, fk_warehouse, quantity)'
+                    . ' SELECT bc.entity, ' . $canonicalId . ', bc.fk_product, bc.fk_warehouse, bc.quantity FROM ' . MAIN_DB_PREFIX . 'fah_bundle_component bc'
+                    . ' WHERE bc.entity=' . (int) $this->conf->entity . ' AND bc.fk_catalog_product=' . $duplicateId
+                    . ' AND NOT EXISTS (SELECT 1 FROM ' . MAIN_DB_PREFIX . 'fah_bundle_component keep WHERE keep.entity=bc.entity AND keep.fk_catalog_product=' . $canonicalId . ' AND keep.fk_product=bc.fk_product)';
+                if (!$this->db->query($copy)) return array(false, 'Could not merge duplicate recipe components: ' . $this->db->lasterror());
+                foreach (array('fah_sales_line', 'fah_stock_movement') as $childTable) {
+                    if (!$this->db->query('UPDATE ' . MAIN_DB_PREFIX . $childTable . ' SET fk_catalog_product=' . $canonicalId . ' WHERE entity=' . (int) $this->conf->entity . ' AND fk_catalog_product=' . $duplicateId)) return array(false, 'Could not reconnect duplicate catalogue data: ' . $this->db->lasterror());
+                }
+                $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'fah_bundle_component WHERE entity=' . (int) $this->conf->entity . ' AND fk_catalog_product=' . $duplicateId);
+                if (!$this->db->query('DELETE FROM ' . $table . ' WHERE rowid=' . $duplicateId . ' AND entity=' . (int) $this->conf->entity)) return array(false, 'Could not remove a duplicate catalogue row: ' . $this->db->lasterror());
+                $removed++;
+            }
+        }
+        if (!$this->db->query('ALTER TABLE ' . $table . ' ADD UNIQUE KEY uk_fah_catalog_external (entity, connector, external_product_id, external_variant_id)')) return array(false, 'Could not enforce catalogue uniqueness: ' . $this->db->lasterror());
+        return array(true, $removed);
     }
 
     public function getCatalog($connector = '')
