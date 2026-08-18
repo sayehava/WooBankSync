@@ -1176,6 +1176,27 @@ class FinanceAutomationHub
         return array(true, 'The next global Dolibarr bank entry reference is now ' . $status['next'] . '.', $status);
     }
 
+    public function getMaintenanceSummary()
+    {
+        $summary = array(
+            'sequence' => $this->getBankEntrySequenceStatus(),
+            'accounts' => count($this->getOwnedBankAccountIds()),
+            'entries' => 0,
+            'documents' => 0,
+            'logs' => 0,
+        );
+        $resql = $this->db->query('SELECT COUNT(*) AS logs,'
+            . ' SUM(CASE WHEN bank_line_id_gross > 0 THEN 1 ELSE 0 END) + SUM(CASE WHEN bank_line_id_fee > 0 THEN 1 ELSE 0 END) AS entries,'
+            . " COUNT(DISTINCT CASE WHEN pdf_ecm_filepath IS NOT NULL AND pdf_ecm_filepath != '' THEN pdf_ecm_filepath END) AS documents"
+            . ' FROM ' . MAIN_DB_PREFIX . 'fah_sync_log WHERE entity=' . (int) $this->conf->entity);
+        if ($resql && ($row = $this->db->fetch_object($resql))) {
+            $summary['entries'] = (int) $row->entries;
+            $summary['documents'] = (int) $row->documents;
+            $summary['logs'] = (int) $row->logs;
+        }
+        return $summary;
+    }
+
     public function runDatabaseChecks()
     {
         $messages = array();
