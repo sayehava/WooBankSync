@@ -218,6 +218,9 @@ if ($action === 'save_stock_recipe') {
 if ($action === 'save_api') {
     $keys = array('WBS_WOO_URL', 'WBS_WOO_CONSUMER_KEY', 'WBS_WOO_CONSUMER_SECRET', 'WBS_SYNC_FROM_DATE', 'WBS_ORDER_STATUSES');
     foreach ($keys as $key) wbs_set_const_safe($db, $key, GETPOST($key, 'restricthtml'), 'chaine', 0, '', $conf->entity);
+    $stripeSecret = GETPOST('DCH_STRIPE_SECRET_KEY', 'restricthtml');
+    if ($stripeSecret !== '') wbs_set_const_safe($db, 'DCH_STRIPE_SECRET_KEY', $stripeSecret, 'password', 0, '', $conf->entity);
+    wbs_set_const_safe($db, 'DCH_STRIPE_ACCOUNT_ID', GETPOST('DCH_STRIPE_ACCOUNT_ID', 'alphanohtml'), 'chaine', 0, '', $conf->entity);
     wbs_set_const_safe($db, 'WBS_DRY_RUN', GETPOST('WBS_DRY_RUN', 'int') ? '1' : '0', 'yesno', 0, '', $conf->entity);
     setEventMessages('API settings saved.', null, 'mesgs');
 }
@@ -545,6 +548,9 @@ foreach ($fields as $key => $label) {
 <?php
 }
 ?>
+<tr><td class="titlefield">Stripe secret key</td><td><input class="flat minwidth500" type="password" name="DCH_STRIPE_SECRET_KEY" value="" placeholder="Leave blank to keep the saved key">
+<br><span class="opacitymedium">Used only when Stripe or Klarna fee metadata is missing. The exact fee is read from Stripe's balance transaction.</span></td></tr>
+<tr><td class="titlefield">Stripe connected account ID</td><td><input class="flat minwidth500" type="text" name="DCH_STRIPE_ACCOUNT_ID" value="<?php echo dol_escape_htmltag($conf->global->DCH_STRIPE_ACCOUNT_ID ?? ''); ?>" placeholder="Optional acct_..."></td></tr>
 <tr><td>Dry run</td><td><input type="checkbox" name="WBS_DRY_RUN" value="1"<?php echo !empty($conf->global->WBS_DRY_RUN) ? ' checked' : ''; ?>> Do not write bank lines</td></tr>
 </table>
 <div class="center"><input class="button button-save" type="submit" value="Save API settings"></div>
