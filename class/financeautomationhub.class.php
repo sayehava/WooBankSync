@@ -93,6 +93,12 @@ class FinanceAutomationHub
             'total_orders' => 0,
             'total_pages' => 0,
         );
+        list($schemaOk, $schemaMessage) = $this->inventory()->ensureSchema();
+        if (!$schemaOk) {
+            $stats['errors'] = 1;
+            $stats['messages'][] = 'Stock recipe database check failed: ' . $schemaMessage;
+            return $stats;
+        }
         if (!$this->inventory()->connectorEnabled('woocommerce')) {
             $stats['errors'] = 1;
             $stats['messages'][] = 'WooCommerce connector is disabled in setup.';
