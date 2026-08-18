@@ -858,7 +858,7 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $storeabillFolder     = (string) ($conf->global->WBS_STOREABILL_FOLDER ?? '');
         $bankExtraFields      = $sync ? $sync->getBankExtraFields() : array();
         $bankExtraFieldLabel  = $bankExtraFields[$mappedBankExtraField] ?? 'WooCommerce invoice number';
-        $self                 = $_SERVER['PHP_SELF'];
+        $self                 = $_SERVER['PHP_SELF'] . '?connector_view=woocommerce';
         ?>
 <form method="POST" action="<?php echo $self; ?>">
 <input type="hidden" name="token" value="<?php echo $token; ?>">
