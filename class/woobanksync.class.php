@@ -977,7 +977,7 @@ class DolliCommerceHub
 
         // 6) Delete physical PDF files and their ECM records
         $deletedPdfs = 0;
-        $affectedFolderIds = array();
+        $ecmRecordsDeleted = false;
         foreach ($pdfPaths as $relPath) {
             if ($ecmBase !== '' && is_file($ecmBase . '/' . $relPath)) {
                 @unlink($ecmBase . '/' . $relPath);
@@ -985,24 +985,16 @@ class DolliCommerceHub
             }
             // Remove ecm_files record
             $ecmResql = $this->db->query(
-                "SELECT rowid, fk_parent FROM " . MAIN_DB_PREFIX . "ecm_files"
+                "SELECT rowid FROM " . MAIN_DB_PREFIX . "ecm_files"
                 . " WHERE entity=" . (int) $this->conf->entity
                 . " AND fullpath_orig='" . $this->db->escape($relPath) . "' LIMIT 1"
             );
             if ($ecmResql && ($ecmObj = $this->db->fetch_object($ecmResql))) {
                 $this->db->query('DELETE FROM ' . MAIN_DB_PREFIX . 'ecm_files WHERE rowid=' . (int) $ecmObj->rowid);
-                if (!empty($ecmObj->fk_parent)) $affectedFolderIds[] = (int) $ecmObj->fk_parent;
+                $ecmRecordsDeleted = true;
             }
         }
-        // Recount folder file counts
-        foreach (array_unique($affectedFolderIds) as $fid) {
-            $this->db->query(
-                'UPDATE ' . MAIN_DB_PREFIX . 'ecm_directories'
-                . ' SET cachenbofdoc=(SELECT COUNT(*) FROM ' . MAIN_DB_PREFIX . 'ecm_files'
-                . ' WHERE fk_parent=' . $fid . ' AND entity=' . (int) $this->conf->entity . ')'
-                . ' WHERE rowid=' . $fid
-            );
-        }
+        if ($ecmRecordsDeleted) $this->db->query('UPDATE ' . MAIN_DB_PREFIX . 'ecm_directories SET cachenbofdoc=-1 WHERE entity=' . (int) $this->conf->entity);
 
         // 7) Delete log rows and cache rows
         $deletedLogs = $this->countRows($table, 'entity=' . (int) $this->conf->entity);
