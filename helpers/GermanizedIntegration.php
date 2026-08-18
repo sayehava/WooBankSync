@@ -743,17 +743,23 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
     {
         if ($action === 'save_invoice') {
             $gzdEnabled  = GETPOST('WBS_GERMANIZED_PRO_ENABLED', 'int') ? '1' : '0';
+            $extraEnabled = $gzdEnabled === '1' && GETPOST('WBS_BANK_EXTRAFIELD_ENABLED', 'int');
+            list($mappingOk, $mappingMessage) = $sync->saveInvoiceExtraFieldMapping(
+                $extraEnabled, GETPOST('WBS_BANK_EXTRAFIELD_CODE', 'aZ09'), GETPOST('WBS_BANK_EXTRAFIELD_LABEL', 'restricthtml')
+            );
+            if (!$mappingOk) {
+                setEventMessages($mappingMessage, null, 'errors');
+                return true;
+            }
             $sync->setConst('WBS_GERMANIZED_PRO_ENABLED', $gzdEnabled, 'yesno');
             $sync->setConst('WBS_DOCUMENT_SYNC_ENABLED',  ($gzdEnabled === '1' && GETPOST('WBS_DOCUMENT_SYNC_ENABLED', 'int')) ? '1' : '0', 'yesno');
-            $sync->setConst('WBS_BANK_EXTRAFIELD_ENABLED', ($gzdEnabled === '1' && GETPOST('WBS_BANK_EXTRAFIELD_ENABLED', 'int')) ? '1' : '0', 'yesno');
-            $sync->setConst('WBS_BANK_EXTRAFIELD_CODE',   GETPOST('WBS_BANK_EXTRAFIELD_CODE', 'aZ09'), 'chaine');
             $sync->setConst('WBS_DOCUMENT_FOLDER_ID',     GETPOST('WBS_DOCUMENT_FOLDER_ID', 'int'), 'chaine');
             $sync->setConst('WBS_PDF_DOWNLOAD_ENABLED',   ($gzdEnabled === '1' && GETPOST('WBS_PDF_DOWNLOAD_ENABLED', 'int')) ? '1' : '0', 'yesno');
             setEventMessages('Germanized settings saved.', null, 'mesgs');
             return true;
         }
         if ($action === 'create_invoice_extrafield') {
-            list($ok, $msg) = $sync->createAndMapInvoiceBankExtraField();
+            list($ok, $msg) = $sync->createAndMapInvoiceBankExtraField(GETPOST('WBS_BANK_EXTRAFIELD_LABEL', 'restricthtml'));
             setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
             return true;
         }
@@ -843,11 +849,11 @@ class WbsGermanizedIntegration implements WbsIntegrationInterface
         $mappedFolderId       = (string) ($conf->global->WBS_DOCUMENT_FOLDER_ID ?? '');
         $storeabillFolder     = (string) ($conf->global->WBS_STOREABILL_FOLDER ?? '');
         $bankExtraFields      = $sync ? $sync->getBankExtraFields() : array();
+        $bankExtraFieldLabel  = $bankExtraFields[$mappedBankExtraField] ?? 'WooCommerce invoice number';
         $self                 = $_SERVER['PHP_SELF'];
         ?>
 <form method="POST" action="<?php echo $self; ?>">
 <input type="hidden" name="token" value="<?php echo $token; ?>">
-<input type="hidden" name="action" value="save_invoice">
 <table class="noborder centpercent">
 <tr class="liste_titre"><td colspan="2">Germanized / Germanized Pro — invoice integration</td></tr>
 <tr><td class="titlefield">Enable Germanized integration</td><td>
@@ -873,6 +879,10 @@ Enable Germanized Pro invoice extraction</label>
 <?php endforeach; ?>
 </select>
 </td></tr>
+<tr><td class="titlefield">Invoice field label</td><td>
+<input class="flat minwidth300" type="text" name="WBS_BANK_EXTRAFIELD_LABEL" value="<?php echo dol_escape_htmltag($bankExtraFieldLabel); ?>" maxlength="255">
+<br><span class="opacitymedium">Saving renames the selected custom field's display label.</span>
+</td></tr>
 <tr><td class="titlefield">Download PDF invoices during sync</td><td>
 <label><input type="checkbox" name="WBS_PDF_DOWNLOAD_ENABLED" value="1"<?php echo $pdfDownloadEnabled ? ' checked' : ''; ?>>
  Automatically download and save invoice PDFs during sync</label>
@@ -883,13 +893,12 @@ Enable Germanized Pro invoice extraction</label>
 <br><span class="opacitymedium">ECM folder where Woo invoice PDFs will be stored.</span>
 </td></tr>
 </table>
-<div class="center"><input class="button button-save" type="submit" value="Save Germanized settings"></div>
+<div class="center">
+<button class="button button-save" type="submit" name="action" value="save_invoice">Save Germanized settings</button>
+<button class="button" type="submit" name="action" value="create_invoice_extrafield">Create and map invoice field automatically</button>
+</div>
 </form>
 <div id="wbsGzdExtra" style="<?php echo $gzdEnabled ? '' : 'display:none;'; ?>">
-<form method="POST" action="<?php echo $self; ?>" class="center" style="margin-top:6px;">
-<input type="hidden" name="token" value="<?php echo $token; ?>"><input type="hidden" name="action" value="create_invoice_extrafield">
-<input class="button" type="submit" value="Create invoice-number custom field and map it automatically"<?php echo $mappedBankExtraField !== '' ? ' disabled' : ''; ?>>
-</form>
 <form method="POST" action="<?php echo $self; ?>" class="center" style="margin-top:4px;">
 <input type="hidden" name="token" value="<?php echo $token; ?>"><input type="hidden" name="action" value="createdocs">
 <input class="button" type="submit" value="Create Woo Invoices ECM folder if missing and map it"<?php echo $mappedFolderId !== '' ? ' disabled' : ''; ?>>
