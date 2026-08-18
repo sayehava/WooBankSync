@@ -271,6 +271,15 @@ if ($action === 'create_amount_extrafields') {
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
+if ($action === 'repair_amount_extrafields') {
+    list($ok, $msg) = $sync->saveAmountExtraFieldMapping(
+        GETPOST('WBS_EXTRAFIELD_GROSS_CODE', 'aZ09'), GETPOST('WBS_EXTRAFIELD_FEE_CODE', 'aZ09'),
+        GETPOST('WBS_EXTRAFIELD_GROSS_LABEL', 'restricthtml'), GETPOST('WBS_EXTRAFIELD_FEE_LABEL', 'restricthtml')
+    );
+    if ($ok) list($ok, $msg) = $sync->repairExistingBankExtraFields();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
 if ($action === 'dbcheck') {
     list($ok, $msg) = $sync->runDatabaseChecks();
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
@@ -668,7 +677,9 @@ Create numeric custom fields yourself and map them here, or use the explicit aut
 <div class="center">
 <button class="button button-save" type="submit" name="action" value="save_amount_fields">Save mapping and labels</button>
 <button class="button" type="submit" name="action" value="create_amount_extrafields">Create and map missing amount fields automatically</button>
+<button class="button" type="submit" name="action" value="repair_amount_extrafields">Repair existing bank entries</button>
 </div>
+<div class="center opacitymedium">Repair rewrites gross, fee, and invoice values on already synced WooCommerce bank entries using the current mappings.</div>
 </form><br>
 <?php } ?>
 <?php
