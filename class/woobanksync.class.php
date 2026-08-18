@@ -1274,10 +1274,32 @@ class DolliCommerceHub
         return array(true, 'WooCommerce amount custom fields ready. Created: ' . (empty($created) ? 'none' : implode(', ', $created)) . '. Reused/skipped: ' . (empty($reused) ? 'none' : implode(', ', $reused)) . '.');
     }
 
-    public function createAndMapInvoiceBankExtraField()
+    public function saveInvoiceExtraFieldMapping($enabled, $code, $label = '')
+    {
+        $code = trim((string) $code);
+        if ($enabled) {
+            if ($code === '' || !isset($this->getBankExtraFields()[$code])) return array(false, 'Invoice number must be mapped to a text bank-entry custom field.');
+            $grossCode = trim((string) $this->getConst('WBS_EXTRAFIELD_GROSS_CODE', ''));
+            $feeCode = trim((string) $this->getConst('WBS_EXTRAFIELD_FEE_CODE', ''));
+            if ($code === $grossCode || $code === $feeCode) return array(false, 'Invoice number cannot use a mapped amount field.');
+        }
+        $this->setConst('WBS_BANK_EXTRAFIELD_CODE', $code, 'chaine');
+        $this->setConst('WBS_BANK_EXTRAFIELD_ENABLED', $enabled ? '1' : '0', 'yesno');
+        $label = trim((string) $label);
+        if ($code !== '' && $label !== '') {
+            $this->db->query('UPDATE ' . MAIN_DB_PREFIX . "extrafields SET label='" . $this->db->escape(substr($label, 0, 255)) . "' WHERE elementtype='bank' AND name='" . $this->db->escape($code) . "' AND entity IN (0," . (int) $this->conf->entity . ')');
+        }
+        return array(true, 'Invoice custom field mapping saved.');
+    }
+
+    public function createAndMapInvoiceBankExtraField($label = '')
     {
         $mapped = trim((string) $this->getConst('WBS_BANK_EXTRAFIELD_CODE', ''));
-        if ($mapped !== '') return array(false, 'A bank-entry custom field is already mapped.');
+        $label = trim((string) $label) ?: 'WooCommerce invoice number';
+        if ($mapped !== '' && isset($this->getBankExtraFields()[$mapped])) {
+            list($ok, $msg) = $this->saveInvoiceExtraFieldMapping(true, $mapped, $label);
+            return array($ok, $ok ? 'The mapped invoice-number custom field is ready.' : $msg);
+        }
 
         $code = 'woo_invoice_number';
         $fields = $this->getBankExtraFields();
@@ -1286,7 +1308,7 @@ class DolliCommerceHub
             $extrafields = new ExtraFields($this->db);
             $result = $extrafields->addExtraField(
                 $code,
-                'WooCommerce invoice number',
+                $label,
                 'varchar',
                 100,
                 '255',
@@ -1310,9 +1332,8 @@ class DolliCommerceHub
             }
         }
 
-        $this->setConst('WBS_BANK_EXTRAFIELD_CODE', $code, 'chaine');
-        $this->setConst('WBS_BANK_EXTRAFIELD_ENABLED', '1', 'yesno');
-        return array(true, 'Bank-entry custom field "WooCommerce invoice number" was created or reused, mapped, and enabled.');
+        list($ok, $msg) = $this->saveInvoiceExtraFieldMapping(true, $code, $label);
+        return array($ok, $ok ? 'The invoice-number custom field was created or reused, mapped, and enabled.' : $msg);
     }
 
     public function saveGatewayMapFromPost()
