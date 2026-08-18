@@ -297,6 +297,16 @@ if ($action === 'dbcheck') {
     setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
 }
 
+if ($action === 'cleanup_legacy_menus') {
+    list($ok, $msg) = $sync->cleanupLegacyMenus();
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
+if ($action === 'set_bank_sequence') {
+    list($ok, $msg) = $sync->setBankEntrySequence(GETPOST('next_bank_reference', 'int'));
+    setEventMessages($msg, null, $ok ? 'mesgs' : 'errors');
+}
+
 if ($action === 'diagnose_meta') {
     $wooUrl = isset($conf->global->FAH_WOO_URL) ? $conf->global->FAH_WOO_URL : '';
     $wooKey = isset($conf->global->FAH_WOO_CONSUMER_KEY) ? $conf->global->FAH_WOO_CONSUMER_KEY : '';
@@ -418,7 +428,7 @@ if ($action === 'setup_cached_json_item') {
 if ($action === 'desync_ajax') {
     header('Content-Type: application/json');
     if (!$user->admin) { echo json_encode(array('ok' => false, 'error' => 'Access denied')); exit; }
-    list($ok, $msg, $stats) = $sync->desyncAllSyncedEntries();
+    list($ok, $msg, $stats) = $sync->desyncAllSyncedEntries(GETPOST('delete_accounts', 'int') ? true : false);
     echo json_encode(array('ok' => $ok, 'message' => $msg, 'stats' => $stats ?? array()));
     exit;
 }
@@ -1094,6 +1104,22 @@ function fahShowIntTab(id) {
 fahShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
 </script>
 <?php endif; ?>
+<?php $fahMaintenance = $sync->getMaintenanceSummary(); ?>
+<br>
+<table class="noborder centpercent">
+  <tr class="liste_titre"><td colspan="2">Bank/Cash and test-data maintenance</td></tr>
+  <tr><td class="titlefield">Module-owned resources</td><td><?php echo (int) $fahMaintenance['accounts']; ?> auto-created bank account(s), <?php echo (int) $fahMaintenance['entries']; ?> imported bank entry/entries, <?php echo (int) $fahMaintenance['documents']; ?> stored document(s), <?php echo (int) $fahMaintenance['logs']; ?> sync log row(s)</td></tr>
+  <tr><td>Global bank entry reference</td><td>Highest existing: <strong><?php echo (int) $fahMaintenance['sequence']['highest']; ?></strong> &nbsp; Current next: <strong><?php echo (int) $fahMaintenance['sequence']['next']; ?></strong> &nbsp; Lowest safe next: <strong><?php echo (int) $fahMaintenance['sequence']['minimum']; ?></strong></td></tr>
+  <tr><td>Set next bank entry reference</td><td>
+    <form method="POST" action="<?php echo dol_escape_htmltag($fahSetupAction); ?>" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="set_bank_sequence">
+      <input class="flat" type="number" min="<?php echo (int) $fahMaintenance['sequence']['minimum']; ?>" step="1" name="next_bank_reference" value="<?php echo (int) $fahMaintenance['sequence']['next']; ?>" required>
+      <button class="button button-save" type="submit">Set next reference</button>
+    </form>
+    <div class="warning" style="margin-top:8px;">This is the global <code>llx_bank</code> sequence used by every Dolibarr Bank/Cash entry, not only this module. It cannot be set below the highest remaining entry plus one.</div>
+  </td></tr>
+  <tr><td>Legacy menu cleanup</td><td><form method="POST" action="<?php echo dol_escape_htmltag($fahSetupAction); ?>" style="display:inline;"><input type="hidden" name="token" value="<?php echo newToken(); ?>"><input type="hidden" name="action" value="cleanup_legacy_menus"><button class="button" type="submit">Remove stale Dolli Commerce Hub menus</button></form></td></tr>
+</table>
 <!-- Danger zone -->
 <br>
 <table class="noborder centpercent">
@@ -1126,6 +1152,7 @@ fahShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
                 <li>All Finance Automation Hub financial sync log entries</li>
                 <li>All WooCommerce order cache entries</li>
             </ul>
+            <label style="display:block;margin:0 0 14px;"><input id="fahDeleteAccounts" type="checkbox" value="1"> Also delete empty virtual bank accounts created by this module and clear their mappings</label>
             <p style="margin:0 0 16px;color:#555;">Channel orders, stock movements, bundle recipes, and manually-created Dolibarr entries are <strong>not</strong> affected.</p>
             <p style="margin:0 0 16px;font-weight:bold;color:#b00020;">This action cannot be undone.</p>
             <div style="display:flex;gap:10px;">
@@ -1144,6 +1171,7 @@ fahShowIntTab('<?php echo dol_escape_js(key($detectedIntegrations)); ?>');
             <div id="fahDesyncResultMsg" style="margin-bottom:14px;text-align:center;"></div>
             <table id="fahDesyncResultTable" class="noborder centpercent" style="font-size:.9em;display:none;">
                 <tr><td>Bank lines deleted</td><td id="fahDrBank" style="text-align:right;font-weight:bold;"></td></tr>
+                <tr><td>Bank accounts deleted</td><td id="fahDrAccounts" style="text-align:right;font-weight:bold;"></td></tr>
                 <tr><td>PDF files deleted</td><td id="fahDrPdfs" style="text-align:right;font-weight:bold;"></td></tr>
                 <tr><td>Log rows deleted</td><td id="fahDrLogs" style="text-align:right;font-weight:bold;"></td></tr>
             </table>
@@ -1176,6 +1204,7 @@ function fahRunDesync() {
     var fd = new FormData();
     fd.append('token', <?php echo json_encode(newToken()); ?>);
     fd.append('action', 'desync_ajax');
+    fd.append('delete_accounts', document.getElementById('fahDeleteAccounts').checked ? '1' : '0');
 
     fetch(<?php echo json_encode($_SERVER['PHP_SELF']); ?>, {method: 'POST', body: fd})
         .then(function(r) { return r.json(); })
@@ -1184,9 +1213,10 @@ function fahRunDesync() {
             document.getElementById('fahDesyncResultStep').style.display   = 'block';
             if (d.ok) {
                 document.getElementById('fahDesyncResultIcon').textContent = '✅';
-                document.getElementById('fahDesyncResultMsg').textContent  = 'Desync complete.';
+                document.getElementById('fahDesyncResultMsg').textContent  = d.message || 'Desync complete.';
                 var s = d.stats || {};
                 document.getElementById('fahDrBank').textContent = s.bank  || 0;
+                document.getElementById('fahDrAccounts').textContent = s.accounts || 0;
                 document.getElementById('fahDrPdfs').textContent = s.pdfs  || 0;
                 document.getElementById('fahDrLogs').textContent = s.logs  || 0;
                 document.getElementById('fahDesyncResultTable').style.display = 'table';
